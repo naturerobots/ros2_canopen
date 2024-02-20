@@ -444,11 +444,11 @@ void NodeCanopen402Driver<NODETYPE>::handle_set_target(
 }
 
 template <class NODETYPE>
-bool NodeCanopen402Driver<NODETYPE>::init_motor()
+bool NodeCanopen402Driver<NODETYPE>::init_motor(uint8_t channel)
 {
   if (this->activated_.load())
   {
-    bool temp = motor_->handleInit();
+    bool temp = motor_->handleInit(channel);
     return temp;
   }
   else

@@ -45,31 +45,76 @@ uint16_t Motor402::getMode()
   return selected_mode_ ? selected_mode_->mode_id_ : (uint16_t)MotorBase::No_Mode;
 }
 
-bool Motor402::isModeSupportedByDevice(uint16_t mode)
+bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
 {
-  uint32_t supported_modes =
-    driver->universal_get_value<uint32_t>(supported_drive_modes_index, 0x0);
+  uint32_t supported_modes ;
+  if (channel == 1)
+  {
+    supported_modes = driver->universal_get_value<uint32_t>(0x6502, 0x0);
+  }
+  else if (channel == 2)
+  {
+    supported_modes = driver->universal_get_value<uint32_t>(0x6D02, 0x0);
+  }
+  else if (channel == 3)
+  {
+    supported_modes = driver->universal_get_value<uint32_t>(0x7502, 0x0);
+  }
+  {
+    /* code */
+  }
+  
   bool supported = supported_modes & (1 << (mode - 1));
+  
   bool below_max = mode <= 32;
   bool above_min = mode > 0;
   return below_max && above_min && supported;
 }
-void Motor402::registerMode(uint16_t id, const ModeSharedPtr & m)
+void Motor402::registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel)
 {
   std::scoped_lock map_lock(map_mutex_);
-  if (m && m->mode_id_ == id) modes_.insert(std::make_pair(id, m));
+  if (m && m->mode_id_ == id){ 
+    if(channel == 1){
+      modes1_.insert(std::make_pair(id, m));
+    }
+    if(channel == 2){
+      modes2_.insert(std::make_pair(id, m));
+    }
+    if (channel == 3){
+      modes3_.insert(std::make_pair(id, m));
+    }
+  }
 }
 
 ModeSharedPtr Motor402::allocMode(uint16_t mode)
 {
   ModeSharedPtr res;
-  if (isModeSupportedByDevice(mode))
+  if (isModeSupportedByDevice(mode, channel_))
   {
     std::scoped_lock map_lock(map_mutex_);
-    std::unordered_map<uint16_t, ModeSharedPtr>::iterator it = modes_.find(mode);
-    if (it != modes_.end())
+    if (channel_ == 1)
     {
-      res = it->second;
+      std::unordered_map<uint16_t, ModeSharedPtr>::iterator it = modes1_.find(mode);
+      if (it != modes1_.end())
+      {
+        res = it->second;
+      }
+    }
+    else if (channel_ == 2)
+    {
+      std::unordered_map<uint16_t, ModeSharedPtr>::iterator it = modes2_.find(mode);
+      if (it != modes2_.end())
+      {
+        res = it->second;
+      }
+    }
+    else if (channel_ == 3)
+    {
+      std::unordered_map<uint16_t, ModeSharedPtr>::iterator it = modes3_.find(mode);
+      if (it != modes3_.end())
+      {
+        res = it->second;
+      }
     }
   }
   return res;
@@ -120,7 +165,8 @@ bool Motor402::switchMode(uint16_t mode)
     selected_mode_.reset();
   }
 
-  if (!switchState(switching_state_)) return false;
+  if (!switchState(switching_state_))
+    return false;
 
   driver->universal_set_value<int8_t>(op_mode_index, 0x0, mode);
 
@@ -129,8 +175,7 @@ bool Motor402::switchMode(uint16_t mode)
   {  // wait for switch
     std::unique_lock lock(mode_mutex_);
 
-    std::chrono::steady_clock::time_point abstime =
-      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    std::chrono::steady_clock::time_point abstime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     if (monitor_mode_)
     {
       while (mode_id_ != mode && mode_cond_.wait_until(lock, abstime) == std::cv_status::no_timeout)
@@ -168,15 +213,15 @@ bool Motor402::switchMode(uint16_t mode)
     }
   }
 
-  if (!switchState(State402::Operation_Enable)) return false;
+  if (!switchState(State402::Operation_Enable))
+    return false;
 
   return okay;
 }
 
-bool Motor402::switchState(const State402::InternalState & target)
+bool Motor402::switchState(const State402::InternalState& target)
 {
-  std::chrono::steady_clock::time_point abstime =
-    std::chrono::steady_clock::now() + state_switch_timeout_;
+  std::chrono::steady_clock::time_point abstime = std::chrono::steady_clock::now() + state_switch_timeout_;
   State402::InternalState state = state_handler_.getState();
   target_state_ = target;
   while (state != target_state_)
@@ -199,8 +244,7 @@ bool Motor402::switchState(const State402::InternalState & target)
       RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Transition timed out.");
       if (enable_diagnostics_.load())
       {
-        this->diag_collector_->addf(
-          "cia402_state", "State transition timed out: %d -> %d", state, next);
+        this->diag_collector_->addf("cia402_state", "State transition timed out: %d -> %d", state, next);
       }
       return false;
     }
@@ -210,8 +254,8 @@ bool Motor402::switchState(const State402::InternalState & target)
 
 bool Motor402::readState()
 {
-  uint16_t old_sw, sw = driver->universal_get_value<uint16_t>(
-                     status_word_entry_index, 0x0);  // TODO: added error handling
+  uint16_t old_sw,
+      sw = driver->universal_get_value<uint16_t>(status_word_entry_index, 0x0);  // TODO: added error handling
   old_sw = status_word_.exchange(sw);
 
   state_handler_.read(sw);
@@ -251,7 +295,10 @@ bool Motor402::readState()
 
   return true;
 }
-void Motor402::handleRead() { readState(); }
+void Motor402::handleRead()
+{
+  readState();
+}
 void Motor402::handleWrite()
 {
   std::scoped_lock lock(cw_mutex_);
@@ -277,8 +324,8 @@ void Motor402::handleWrite()
   if (start_fault_reset_.exchange(false))
   {
     RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Fault reset");
-    this->driver->universal_set_value<uint16_t>(
-      control_word_entry_index, 0x0, control_word_ & ~(1 << Command402::CW_Fault_Reset));
+    this->driver->universal_set_value<uint16_t>(control_word_entry_index, 0x0,
+                                                control_word_ & ~(1 << Command402::CW_Fault_Reset));
   }
   else
   {
@@ -295,66 +342,91 @@ void Motor402::handleDiag()
   switch (state)
   {
     case State402::Not_Ready_To_Switch_On:
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::WARN, "Not ready to switch on");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Not ready to switch on");
       break;
     case State402::Switch_On_Disabled:
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::WARN, "Switch on disabled");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Switch on disabled");
       break;
     case State402::Ready_To_Switch_On:
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::OK, "Ready to switch on");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Ready to switch on");
       break;
     case State402::Switched_On:
       // std::cout << "Motor operation is not enabled" << std::endl;
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Switched on");
       break;
     case State402::Operation_Enable:
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::OK, "Operation enabled");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Operation enabled");
       break;
     case State402::Quick_Stop_Active:
       // std::cout << "Quick stop is active" << std::endl;
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::WARN, "Quick stop active");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Quick stop active");
       break;
     case State402::Fault:
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Fault");
       break;
     case State402::Fault_Reaction_Active:
       // std::cout << "Motor has fault" << std::endl;
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Fault reaction active");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Fault reaction active");
       break;
     case State402::Unknown:
       // std::cout << "State is unknown" << std::endl;
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Unknown state");
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Unknown state");
       break;
   }
 
   if (sw & (1 << State402::SW_Warning))
   {
     // std::cout << "Warning bit is set" << std::endl;
-    this->diag_collector_->summary(
-      diagnostic_msgs::msg::DiagnosticStatus::WARN, "Warning bit is set");
+    this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Warning bit is set");
   }
   if (sw & (1 << State402::SW_Internal_limit))
   {
     // std::cout << "Internal limit active" << std::endl;
-    this->diag_collector_->summary(
-      diagnostic_msgs::msg::DiagnosticStatus::WARN, "Internal limit active");
+    this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Internal limit active");
   }
 }
 
-bool Motor402::handleInit()
+bool Motor402::handleInit(uint8_t channel)
 {
-  for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators_.begin();
-       it != mode_allocators_.end(); ++it)
-  {
-    (it->second)();
+  channel_ = channel;
+  if(channel_ == 1){
+    status_word_entry_index = 0x6041;
+    control_word_entry_index = 0x6040;
+    op_mode_index = 0x6060;
+    op_mode_display_index = 0x6061;
+    supported_drive_modes_index = 0x6502;
+
+    for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators1_.begin();
+        it != mode_allocators1_.end(); ++it)
+    {
+      (it->second)();
+    }
+  }else if(channel_ == 2){
+    status_word_entry_index = 0x6841;
+    control_word_entry_index = 0x6840;
+    op_mode_index = 0x6860;
+    op_mode_display_index = 0x6861;
+    supported_drive_modes_index = 0x6D02;
+
+    for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators2_.begin();
+         it != mode_allocators2_.end(); ++it)
+    {
+      (it->second)();
+    }
+  }else if(channel_ == 3){
+    status_word_entry_index = 0x7041;
+    control_word_entry_index = 0x7040;
+    op_mode_index = 0x7060;
+    op_mode_display_index = 0x7061;
+    supported_drive_modes_index = 0x7502;
+
+    for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators3_.begin();
+         it != mode_allocators3_.end(); ++it)
+    {
+      (it->second)();
+    }
   }
+
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Read State");
   if (!readState())
   {
@@ -363,7 +435,7 @@ bool Motor402::handleInit()
   }
   {
     std::scoped_lock lock(cw_mutex_);
-    control_word_ = 0;
+    control_word_ = 0; 
     start_fault_reset_ = true;
   }
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
@@ -373,38 +445,40 @@ bool Motor402::handleInit()
     return false;
   }
 
-  ModeSharedPtr m = allocMode(MotorBase::Homing);
-  if (!m)
-  {
-    std::cout << "Homeing mode not supported" << std::endl;
-    return true;  // homing not supported
-  }
+  // ! Homing mode on initialize deactivated
+  // ModeSharedPtr m = allocMode(MotorBase::Homing);
+  // if (!m)
+  // {
+  //   std::cout << "Homeing mode not supported" << std::endl;
+  //   return true;  // homing not supported
+  // }
 
-  HomingMode * homing = dynamic_cast<HomingMode *>(m.get());
+  // HomingMode* homing = dynamic_cast<HomingMode*>(m.get());
 
-  if (!homing)
-  {
-    std::cout << "Homing mode has incorrect handler" << std::endl;
-    return false;
-  }
-  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Switch to homing");
-  if (!switchMode(MotorBase::Homing))
-  {
-    std::cout << "Could not enter homing mode" << std::endl;
-    return false;
-  }
-  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Execute homing");
-  if (!homing->executeHoming())
-  {
-    std::cout << "Homing failed" << std::endl;
-    return false;
-  }
+  // if (!homing)
+  // {
+  //   std::cout << "Homing mode has incorrect handler" << std::endl;
+  //   return false;
+  // }
+  // RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Switch to homing");
+  // if (!switchMode(MotorBase::Homing))
+  // {
+  //   std::cout << "Could not enter homing mode" << std::endl;
+  //   return false;
+  // }
+  // RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Execute homing");
+  // if (!homing->executeHoming())
+  // {
+  //   std::cout << "Homing failed" << std::endl;
+  //   return false;
+  // }
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Switch no mode");
   if (!switchMode(MotorBase::No_Mode))
   {
     std::cout << "Could not enter no mode" << std::endl;
     return false;
   }
+
   return true;
 }
 bool Motor402::handleShutdown()
@@ -418,7 +492,8 @@ bool Motor402::handleHalt()
   std::scoped_lock lock(cw_mutex_);
 
   // do not demand quickstop in case of fault
-  if (state == State402::Fault_Reaction_Active || state == State402::Fault) return false;
+  if (state == State402::Fault_Reaction_Active || state == State402::Fault)
+    return false;
 
   if (state != State402::Operation_Enable)
   {

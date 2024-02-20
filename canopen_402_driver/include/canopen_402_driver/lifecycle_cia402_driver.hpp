@@ -77,7 +77,10 @@ public:
 
   bool set_target(double target) { return node_canopen_402_driver_->set_target(target); }
 
-  bool init_motor() { return node_canopen_402_driver_->init_motor(); }
+  bool init_motor(uint8_t channel = 1)
+  {
+    return node_canopen_402_driver_->init_motor(channel);
+  }
 
   bool recover_motor() { return node_canopen_402_driver_->recover_motor(); }
 

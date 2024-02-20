@@ -101,7 +101,7 @@ public:
    * @return  bool
    * Indicates initialisation procedure result
    */
-  bool init_motor();
+  bool init_motor(uint8_t channel);
 
   /**
    * @brief Service Callback to recover device

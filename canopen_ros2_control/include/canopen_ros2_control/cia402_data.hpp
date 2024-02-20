@@ -40,6 +40,7 @@ struct Cia402Data
   std::vector<std::string> interfaces_to_start;
   std::vector<std::string> interfaces_to_running;
   std::vector<std::string> interfaces_to_stop;
+  uint8_t channel;
   YAML::Node config;
 
   // FROM MOTOR
@@ -61,6 +62,22 @@ struct Cia402Data
       RCLCPP_ERROR(rclcpp::get_logger(joint_name), "No node id for '%s'", joint.name.c_str());
       return false;
     }
+
+    if (!config["channel"])
+    {
+      channel = 1;
+      RCLCPP_INFO(
+        rclcpp::get_logger(joint_name), "No channel for '%s', using default channel '%u'",
+        joint.name.c_str(), channel);
+    }
+
+    if(config["channel"])
+    {
+      channel = config["channel"].as<uint8_t>();
+      RCLCPP_INFO(
+        rclcpp::get_logger(joint_name), "Channel for '%s' is '%u'", joint.name.c_str(), channel);
+    }
+  
 
     node_id = config["node_id"].as<uint16_t>();
     RCLCPP_INFO(

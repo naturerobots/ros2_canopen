@@ -37,35 +37,59 @@
 
 namespace ros2_canopen
 {
+// Modes of operation for Channel 1
+typedef ModeForwardHelper<MotorBase::Profiled_Velocity, int32_t, 0x60FF, 0, 0> ProfiledVelocityMode1;
+typedef ModeForwardHelper<MotorBase::Profiled_Torque, int16_t, 0x6071, 0, 0> ProfiledTorqueMode1;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Position, int32_t, 0x607A, 0, 0> CyclicSynchronousPositionMode1;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Velocity, int32_t, 0x60FF, 0, 0> CyclicSynchronousVelocityMode1;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Torque, int16_t, 0x6071, 0, 0> CyclicSynchronousTorqueMode1;
+typedef ModeForwardHelper<MotorBase::Velocity, int16_t, 0x6042, 0,
+                          (1 << Command402::CW_Operation_mode_specific0) |
+                              (1 << Command402::CW_Operation_mode_specific1) |
+                              (1 << Command402::CW_Operation_mode_specific2)>
+    VelocityMode1;
+typedef ModeForwardHelper<MotorBase::Interpolated_Position, int32_t, 0x60C1, 0x01,
+                          (1 << Command402::CW_Operation_mode_specific0)>
+    InterpolatedPositionMode1;
 
-typedef ModeForwardHelper<MotorBase::Profiled_Velocity, int32_t, 0x60FF, 0, 0> ProfiledVelocityMode;
-typedef ModeForwardHelper<MotorBase::Profiled_Torque, int16_t, 0x6071, 0, 0> ProfiledTorqueMode;
-typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Position, int32_t, 0x607A, 0, 0>
-  CyclicSynchronousPositionMode;
-typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Velocity, int32_t, 0x60FF, 0, 0>
-  CyclicSynchronousVelocityMode;
-typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Torque, int16_t, 0x6071, 0, 0>
-  CyclicSynchronousTorqueMode;
-typedef ModeForwardHelper<
-  MotorBase::Velocity, int16_t, 0x6042, 0,
-  (1 << Command402::CW_Operation_mode_specific0) | (1 << Command402::CW_Operation_mode_specific1) |
-    (1 << Command402::CW_Operation_mode_specific2)>
-  VelocityMode;
-typedef ModeForwardHelper<
-  MotorBase::Interpolated_Position, int32_t, 0x60C1, 0x01,
-  (1 << Command402::CW_Operation_mode_specific0)>
-  InterpolatedPositionMode;
+// Modes of operation for Channel 2
+typedef ModeForwardHelper<MotorBase::Profiled_Velocity, int32_t, 0x68FF, 0, 0> ProfiledVelocityMode2;
+typedef ModeForwardHelper<MotorBase::Profiled_Torque, int16_t, 0x6871, 0, 0> ProfiledTorqueMode2;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Position, int32_t, 0x687A, 0, 0> CyclicSynchronousPositionMode2;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Velocity, int32_t, 0x68FF, 0, 0> CyclicSynchronousVelocityMode2;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Torque, int16_t, 0x6871, 0, 0> CyclicSynchronousTorqueMode2;
+typedef ModeForwardHelper<MotorBase::Velocity, int16_t, 0x6842, 0,
+                          (1 << Command402::CW_Operation_mode_specific0) |
+                              (1 << Command402::CW_Operation_mode_specific1) |
+                              (1 << Command402::CW_Operation_mode_specific2)>
+    VelocityMode2;
+typedef ModeForwardHelper<MotorBase::Interpolated_Position, int32_t, 0x68C1, 0x01,
+                          (1 << Command402::CW_Operation_mode_specific0)>
+    InterpolatedPositionMode2;
+
+// Modes of operation for Channel 3
+typedef ModeForwardHelper<MotorBase::Profiled_Velocity, int32_t, 0x70FF, 0, 0> ProfiledVelocityMode3;
+typedef ModeForwardHelper<MotorBase::Profiled_Torque, int16_t, 0x7071, 0, 0> ProfiledTorqueMode3;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Position, int32_t, 0x707A, 0, 0> CyclicSynchronousPositionMode3;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Velocity, int32_t, 0x70FF, 0, 0> CyclicSynchronousVelocityMode3;
+typedef ModeForwardHelper<MotorBase::Cyclic_Synchronous_Torque, int16_t, 0x7071, 0, 0> CyclicSynchronousTorqueMode3;
+typedef ModeForwardHelper<MotorBase::Velocity, int16_t, 0x7042, 0,
+                          (1 << Command402::CW_Operation_mode_specific0) |
+                              (1 << Command402::CW_Operation_mode_specific1) |
+                              (1 << Command402::CW_Operation_mode_specific2)>
+    VelocityMode3;
+typedef ModeForwardHelper<MotorBase::Interpolated_Position, int32_t, 0x70C1, 0x01,
+                          (1 << Command402::CW_Operation_mode_specific0)>
+    InterpolatedPositionMode3;
 
 class Motor402 : public MotorBase
 {
 public:
-  Motor402(
-    std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state)
-  : MotorBase(), switching_state_(switching_state), monitor_mode_(true), state_switch_timeout_(5)
+  Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state)
+    : MotorBase(), switching_state_(switching_state), monitor_mode_(true), state_switch_timeout_(5)
   {
     this->driver = driver;
   }
-
   virtual bool setTarget(double val);
   virtual bool enterModeAndWait(uint16_t mode);
   virtual bool isModeSupported(uint16_t mode);
@@ -88,7 +112,7 @@ public:
    * and then executes the chosen homing method.
    *
    */
-  bool handleInit();
+  bool handleInit(uint8_t channel = 1);
   /**
    * @brief Read objects of the drive
    *
@@ -145,16 +169,37 @@ public:
    * @return false
    */
   template <typename T, typename... Args>
-  bool registerMode(uint16_t mode, Args &&... args)
+  bool registerModesChannel1(uint16_t mode, Args&&... args)
   {
-    return mode_allocators_
-      .insert(std::make_pair(
-        mode,
-        [args..., mode, this]()
-        {
-          if (isModeSupportedByDevice(mode)) registerMode(mode, ModeSharedPtr(new T(args...)));
-        }))
-      .second;
+    return mode_allocators1_
+        .insert(std::make_pair(mode,
+                               [args..., mode, this]() {
+                                if (isModeSupportedByDevice(mode,1))
+                                   registerMode(mode, ModeSharedPtr(new T(args...)),1);
+                               }))
+        .second;
+  }
+  template <typename T, typename... Args>
+  bool registerModesChannel2(uint16_t mode, Args&&... args)
+  {
+    return mode_allocators2_
+        .insert(std::make_pair(mode,
+                               [args..., mode, this]() {
+                                 if (isModeSupportedByDevice(mode,2))
+                                   registerMode(mode, ModeSharedPtr(new T(args...)),2);
+                               }))
+        .second;
+  }
+  template <typename T, typename... Args>
+  bool registerModesChannel3(uint16_t mode, Args&&... args)
+  {
+    return mode_allocators3_
+        .insert(std::make_pair(mode,
+                               [args..., mode, this]() {
+                                 if (isModeSupportedByDevice(mode,3))
+                                   registerMode(mode, ModeSharedPtr(new T(args...)),3);
+                               }))
+        .second;
   }
 
   /**
@@ -163,18 +208,38 @@ public:
    */
   virtual void registerDefaultModes()
   {
-    registerMode<ProfiledPositionMode>(MotorBase::Profiled_Position, driver);
-    registerMode<VelocityMode>(MotorBase::Velocity, driver);
-    registerMode<ProfiledVelocityMode>(MotorBase::Profiled_Velocity, driver);
-    registerMode<ProfiledTorqueMode>(MotorBase::Profiled_Torque, driver);
-    registerMode<DefaultHomingMode>(MotorBase::Homing, driver);
-    registerMode<InterpolatedPositionMode>(MotorBase::Interpolated_Position, driver);
-    registerMode<CyclicSynchronousPositionMode>(MotorBase::Cyclic_Synchronous_Position, driver);
-    registerMode<CyclicSynchronousVelocityMode>(MotorBase::Cyclic_Synchronous_Velocity, driver);
-    registerMode<CyclicSynchronousTorqueMode>(MotorBase::Cyclic_Synchronous_Torque, driver);
+    registerModesChannel1<ProfiledPositionMode>(MotorBase::Profiled_Position, driver);
+    registerModesChannel1<VelocityMode1>(MotorBase::Velocity, driver);
+    registerModesChannel1<ProfiledVelocityMode1>(MotorBase::Profiled_Velocity, driver);
+    registerModesChannel1<ProfiledTorqueMode1>(MotorBase::Profiled_Torque, driver);
+    registerModesChannel1<DefaultHomingMode>(MotorBase::Homing, driver);
+    registerModesChannel1<InterpolatedPositionMode1>(MotorBase::Interpolated_Position, driver);
+    registerModesChannel1<CyclicSynchronousPositionMode1>(MotorBase::Cyclic_Synchronous_Position, driver);
+    registerModesChannel1<CyclicSynchronousVelocityMode1>(MotorBase::Cyclic_Synchronous_Velocity, driver);
+    registerModesChannel1<CyclicSynchronousTorqueMode1>(MotorBase::Cyclic_Synchronous_Torque, driver);
+
+    // !TODO Profiled Position Mode and homing Mode not supportet yet for Channel 2 and 3
+    registerModesChannel2<VelocityMode2>(MotorBase::Velocity, driver);
+    registerModesChannel2<ProfiledVelocityMode2>(MotorBase::Profiled_Velocity, driver);
+    registerModesChannel2<ProfiledTorqueMode2>(MotorBase::Profiled_Torque, driver);
+    registerModesChannel2<InterpolatedPositionMode2>(MotorBase::Interpolated_Position, driver);
+    registerModesChannel2<CyclicSynchronousPositionMode2>(MotorBase::Cyclic_Synchronous_Position, driver);
+    registerModesChannel2<CyclicSynchronousVelocityMode2>(MotorBase::Cyclic_Synchronous_Velocity, driver);
+    registerModesChannel2<CyclicSynchronousTorqueMode2>(MotorBase::Cyclic_Synchronous_Torque, driver);
+
+    registerModesChannel3<VelocityMode3>(MotorBase::Velocity, driver);
+    registerModesChannel3<ProfiledVelocityMode3>(MotorBase::Profiled_Velocity, driver);
+    registerModesChannel3<ProfiledTorqueMode3>(MotorBase::Profiled_Torque, driver);
+    registerModesChannel3<InterpolatedPositionMode3>(MotorBase::Interpolated_Position, driver);
+    registerModesChannel3<CyclicSynchronousPositionMode3>(MotorBase::Cyclic_Synchronous_Position, driver);
+    registerModesChannel3<CyclicSynchronousVelocityMode3>(MotorBase::Cyclic_Synchronous_Velocity, driver);
+    registerModesChannel3<CyclicSynchronousTorqueMode3>(MotorBase::Cyclic_Synchronous_Torque, driver);
   }
 
-  double get_speed() const { return (double)this->driver->universal_get_value<int32_t>(0x606C, 0); }
+  double get_speed() const
+  {
+    return (double)this->driver->universal_get_value<int32_t>(0x606C, 0);
+  }
   double get_position() const
   {
     return (double)this->driver->universal_get_value<int32_t>(0x6064, 0);
@@ -187,13 +252,13 @@ public:
   }
 
 private:
-  virtual bool isModeSupportedByDevice(uint16_t mode);
-  void registerMode(uint16_t id, const ModeSharedPtr & m);
+  virtual bool isModeSupportedByDevice(uint16_t mode, uint8_t channel);
+  void registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel);
 
   ModeSharedPtr allocMode(uint16_t mode);
 
   bool switchMode(uint16_t mode);
-  bool switchState(const State402::InternalState & target);
+  bool switchState(const State402::InternalState& target);
 
   std::atomic<uint16_t> status_word_;
   uint16_t control_word_;
@@ -204,9 +269,9 @@ private:
   State402 state_handler_;
 
   std::mutex map_mutex_;
-  std::unordered_map<uint16_t, ModeSharedPtr> modes_;
+  std::unordered_map<uint16_t, ModeSharedPtr> modes1_,modes2_,modes3_;
   typedef std::function<void()> AllocFuncType;
-  std::unordered_map<uint16_t, AllocFuncType> mode_allocators_;
+  std::unordered_map<uint16_t, AllocFuncType> mode_allocators1_,mode_allocators2_,mode_allocators3_;
 
   ModeSharedPtr selected_mode_;
   uint16_t mode_id_;
@@ -216,16 +281,20 @@ private:
   const bool monitor_mode_;
   const std::chrono::seconds state_switch_timeout_;
 
+  //  !need to patch, that second channel is supported
   std::shared_ptr<LelyDriverBridge> driver;
-  const uint16_t status_word_entry_index = 0x6041;
-  const uint16_t control_word_entry_index = 0x6040;
-  const uint16_t op_mode_display_index = 0x6061;
-  const uint16_t op_mode_index = 0x6060;
-  const uint16_t supported_drive_modes_index = 0x6502;
+  uint16_t status_word_entry_index;
+  uint16_t control_word_entry_index;
+  uint16_t op_mode_display_index;
+  uint16_t op_mode_index;
+  uint16_t supported_drive_modes_index;
 
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;
   std::shared_ptr<DiagnosticsCollector> diag_collector_;
+
+  // channel
+  uint8_t channel_ = 1;
 };
 
 }  // namespace ros2_canopen

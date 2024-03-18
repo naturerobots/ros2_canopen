@@ -33,13 +33,12 @@ namespace node_interfaces
 template <class NODETYPE>
 class NodeCanopen402Driver : public NodeCanopenProxyDriver<NODETYPE>
 {
-  static_assert(
-    std::is_base_of<rclcpp::Node, NODETYPE>::value ||
-      std::is_base_of<rclcpp_lifecycle::LifecycleNode, NODETYPE>::value,
-    "NODETYPE must derive from rclcpp::Node or rclcpp_lifecycle::LifecycleNode");
+  static_assert(std::is_base_of<rclcpp::Node, NODETYPE>::value ||
+                    std::is_base_of<rclcpp_lifecycle::LifecycleNode, NODETYPE>::value,
+                "NODETYPE must derive from rclcpp::Node or rclcpp_lifecycle::LifecycleNode");
 
 protected:
-  std::shared_ptr<Motor402> motor_;
+  std::map<uint8_t, std::shared_ptr<Motor402>> motors_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_init_service;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_halt_service;
@@ -52,18 +51,13 @@ protected:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_interpolated_position_service;
   rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr handle_set_target_service;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr publish_joint_state;
-  double scale_pos_to_dev_;
-  double scale_pos_from_dev_;
-  double scale_vel_to_dev_;
-  double scale_vel_from_dev_;
-  ros2_canopen::State402::InternalState switching_state_;
 
   void publish();
   virtual void poll_timer_callback() override;
-  void diagnostic_callback(diagnostic_updater::DiagnosticStatusWrapper & stat) override;
+  void diagnostic_callback(diagnostic_updater::DiagnosticStatusWrapper& stat) override;
 
 public:
-  NodeCanopen402Driver(NODETYPE * node);
+  NodeCanopen402Driver(NODETYPE* node);
 
   virtual void init(bool called_from_base) override;
   virtual void configure(bool called_from_base) override;
@@ -71,11 +65,25 @@ public:
   virtual void deactivate(bool called_from_base) override;
   virtual void add_to_master() override;
 
-  virtual double get_speed() { return motor_->get_speed() * scale_vel_from_dev_; }
+  virtual double get_speed(uint8_t channel)
+  {
+    return motors_[channel]->get_speed();
+  }
 
-  virtual double get_position() { return motor_->get_position() * scale_pos_from_dev_; }
+  virtual double get_position(uint8_t channel)
+  {
+    return motors_[channel]->get_position();
+  }
 
-  virtual uint16_t get_mode() { return motor_->getMode(); }
+  virtual uint16_t get_mode(uint8_t channel)
+  {
+    return motors_[channel]->getMode();
+  }
+
+  const std::map<uint8_t, std::shared_ptr<Motor402>>& get_available_motors()
+  {
+    return motors_;
+  }
 
   /**
    * @brief Service Callback to initialise device
@@ -86,9 +94,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_init(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
+  void handle_init(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                   std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Method to initialise device
@@ -112,9 +119,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_recover(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
+  void handle_recover(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Method to recover device
@@ -126,7 +132,7 @@ public:
    *
    * @return bool
    */
-  bool recover_motor();
+  bool recover_motor(uint8_t channel);
 
   /**
    * @brief Service Callback to halt device
@@ -138,9 +144,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_halt(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
+  void handle_halt(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                   std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Method to halt device
@@ -153,7 +158,7 @@ public:
    *
    * @return bool
    */
-  bool halt_motor();
+  bool halt_motor(uint8_t channel);
 
   /**
    * @brief Service Callback to set profiled position mode
@@ -165,24 +170,20 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_position(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  bool set_operation_mode(uint16_t mode);
+  void handle_set_mode_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
-   * @brief Method to set profiled position mode
+   * @brief Method to set desired mode
    *
-   * Calls Motor402::enterModeAndWait with Profiled Position Mode as
+   * Calls Motor402::enterModeAndWait with desired Mode as
    * Target Operation Mode. If successful, the motor was transitioned
-   * to Profiled Position Mode.
+   * to desired Mode.
    *
    * @param [in] void
-   *
-   * @return bool
+   * @param [out] bool
    */
-  bool set_mode_position();
+  bool set_operation_mode(uint8_t channel, uint16_t mode);
 
   /**
    * @brief Service Callback to set profiled velocity mode
@@ -194,22 +195,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_velocity(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Method to set profiled velocity mode
-   *
-   * Calls Motor402::enterModeAndWait with Profiled Velocity Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Profiled Velocity Mode.
-   *
-   * @param [in] void
-   *
-   * @return bool
-   */
-  bool set_mode_velocity();
+  void handle_set_mode_velocity(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Service Callback to set cyclic position mode
@@ -221,9 +208,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_cyclic_position(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
+  void handle_set_mode_cyclic_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                       std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Service Callback to set interpolated position mode
@@ -235,34 +221,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_interpolated_position(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Method to set interpolated position mode
-   *
-   * Calls Motor402::enterModeAndWait with Interpolated Position Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Interpolated Position Mode. This only supports linear mode.
-   *
-   * @param [in] void
-   * @param [out] bool
-   */
-  bool set_mode_interpolated_position();
-
-  /**
-   * @brief Method to set cyclic position mode
-   *
-   * Calls Motor402::enterModeAndWait with Cyclic Position Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Cyclic Position Mode.
-   *
-   * @param [in] void
-   *
-   * @return bool
-   */
-  bool set_mode_cyclic_position();
+  void handle_set_mode_interpolated_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                             std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Service Callback to set cyclic velocity mode
@@ -274,22 +234,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_cyclic_velocity(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Method to set cyclic velocity mode
-   *
-   * Calls Motor402::enterModeAndWait with Cyclic Velocity Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Cyclic Velocity Mode.
-   *
-   * @param [in] void
-   *
-   * @return bool
-   */
-  bool set_mode_cyclic_velocity();
+  void handle_set_mode_cyclic_velocity(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                       std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Service Callback to set profiled torque mode
@@ -301,22 +247,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_torque(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Method to set profiled torque mode
-   *
-   * Calls Motor402::enterModeAndWait with Profiled Torque Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Profiled Torque Mode.
-   *
-   * @param [in] void
-   *
-   * @return bool
-   */
-  bool set_mode_torque();
+  void handle_set_mode_torque(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                              std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Service Callback to set target
@@ -328,9 +260,8 @@ public:
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_target(
-    const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response);
+  void handle_set_target(const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+                         canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response);
 
   /**
    * @brief Method to set target
@@ -343,7 +274,7 @@ public:
    *
    * @return bool
    */
-  bool set_target(double target);
+  bool set_target(uint8_t channel, double target);
 };
 }  // namespace node_interfaces
 }  // namespace ros2_canopen

@@ -85,16 +85,38 @@ typedef ModeForwardHelper<MotorBase::Interpolated_Position, int32_t, 0x70C1, 0x0
 class Motor402 : public MotorBase
 {
 public:
-  Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state)
-    : MotorBase(), switching_state_(switching_state), monitor_mode_(true), state_switch_timeout_(5)
+  Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
+           std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
+           double scale_vel_from_dev, uint8_t channel)
+    : MotorBase()
+    , joint_name_(joint_name)
+    , scale_pos_to_dev_(scale_pos_to_dev)
+    , scale_pos_from_dev_(scale_pos_from_dev)
+    , scale_vel_to_dev_(scale_vel_to_dev)
+    , scale_vel_from_dev_(scale_vel_from_dev)
+    , channel_(channel)
+    , switching_state_(switching_state)
+    , monitor_mode_(true)
+    , state_switch_timeout_(5)
   {
     this->driver = driver;
   }
+
   virtual bool setTarget(double val);
   virtual bool enterModeAndWait(uint16_t mode);
   virtual bool isModeSupported(uint16_t mode);
   virtual uint16_t getMode();
   bool readState();
+
+  const std::string& getJointName() const
+  {
+    return joint_name_;
+  }
+
+  void setDriver(std::shared_ptr<LelyDriverBridge> driver)
+  {
+    this->driver = driver;
+  }
 
   /**
    * @brief Updates the device diagnostic information
@@ -112,7 +134,7 @@ public:
    * and then executes the chosen homing method.
    *
    */
-  bool handleInit(uint8_t channel = 1);
+  bool handleInit();
   /**
    * @brief Read objects of the drive
    *
@@ -174,8 +196,8 @@ public:
     return mode_allocators1_
         .insert(std::make_pair(mode,
                                [args..., mode, this]() {
-                                if (isModeSupportedByDevice(mode,1))
-                                   registerMode(mode, ModeSharedPtr(new T(args...)),1);
+                                 if (isModeSupportedByDevice(mode, 1))
+                                   registerMode(mode, ModeSharedPtr(new T(args...)), 1);
                                }))
         .second;
   }
@@ -185,8 +207,8 @@ public:
     return mode_allocators2_
         .insert(std::make_pair(mode,
                                [args..., mode, this]() {
-                                 if (isModeSupportedByDevice(mode,2))
-                                   registerMode(mode, ModeSharedPtr(new T(args...)),2);
+                                 if (isModeSupportedByDevice(mode, 2))
+                                   registerMode(mode, ModeSharedPtr(new T(args...)), 2);
                                }))
         .second;
   }
@@ -196,8 +218,8 @@ public:
     return mode_allocators3_
         .insert(std::make_pair(mode,
                                [args..., mode, this]() {
-                                 if (isModeSupportedByDevice(mode,3))
-                                   registerMode(mode, ModeSharedPtr(new T(args...)),3);
+                                 if (isModeSupportedByDevice(mode, 3))
+                                   registerMode(mode, ModeSharedPtr(new T(args...)), 3);
                                }))
         .second;
   }
@@ -238,11 +260,11 @@ public:
 
   double get_speed() const
   {
-    return (double)this->driver->universal_get_value<int32_t>(0x606C, 0);
+    return (double)this->driver->universal_get_value<int32_t>(0x606C, 0) * scale_vel_from_dev_;
   }
   double get_position() const
   {
-    return (double)this->driver->universal_get_value<int32_t>(0x6064, 0);
+    return (double)this->driver->universal_get_value<int32_t>(0x6064, 0) * scale_pos_from_dev_;
   }
 
   void set_diagnostic_status_msgs(std::shared_ptr<DiagnosticsCollector> status, bool enable)
@@ -260,6 +282,16 @@ private:
   bool switchMode(uint16_t mode);
   bool switchState(const State402::InternalState& target);
 
+  std::string joint_name_;
+
+  double scale_pos_to_dev_;
+  double scale_pos_from_dev_;
+  double scale_vel_to_dev_;
+  double scale_vel_from_dev_;
+
+  // channel
+  uint8_t channel_ = 1;
+
   std::atomic<uint16_t> status_word_;
   uint16_t control_word_;
   std::mutex cw_mutex_;
@@ -269,9 +301,9 @@ private:
   State402 state_handler_;
 
   std::mutex map_mutex_;
-  std::unordered_map<uint16_t, ModeSharedPtr> modes1_,modes2_,modes3_;
+  std::unordered_map<uint16_t, ModeSharedPtr> modes1_, modes2_, modes3_;
   typedef std::function<void()> AllocFuncType;
-  std::unordered_map<uint16_t, AllocFuncType> mode_allocators1_,mode_allocators2_,mode_allocators3_;
+  std::unordered_map<uint16_t, AllocFuncType> mode_allocators1_, mode_allocators2_, mode_allocators3_;
 
   ModeSharedPtr selected_mode_;
   uint16_t mode_id_;
@@ -292,9 +324,6 @@ private:
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;
   std::shared_ptr<DiagnosticsCollector> diag_collector_;
-
-  // channel
-  uint8_t channel_ = 1;
 };
 
 }  // namespace ros2_canopen

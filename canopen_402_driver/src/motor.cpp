@@ -23,8 +23,21 @@ bool Motor402::setTarget(double val)
 {
   if (state_handler_.getState() == State402::Operation_Enable)
   {
+    auto mode = getMode();
+    double target;
+    if ((mode == MotorBase::Profiled_Position) or (mode == MotorBase::Cyclic_Synchronous_Position) or
+        (mode == MotorBase::Interpolated_Position))
+    {
+      target = val * scale_pos_to_dev_;
+    }
+    else if ((mode == MotorBase::Velocity) or (mode == MotorBase::Profiled_Velocity) or
+             (mode == MotorBase::Cyclic_Synchronous_Velocity))
+    {
+      target = val * scale_vel_to_dev_;
+    }
+
     std::scoped_lock lock(mode_mutex_);
-    return selected_mode_ && selected_mode_->setTarget(val);
+    return selected_mode_ && selected_mode_->setTarget(target);
   }
   return false;
 }
@@ -47,7 +60,7 @@ uint16_t Motor402::getMode()
 
 bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
 {
-  uint32_t supported_modes ;
+  uint32_t supported_modes;
   if (channel == 1)
   {
     supported_modes = driver->universal_get_value<uint32_t>(0x6502, 0x0);
@@ -63,9 +76,9 @@ bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
   {
     /* code */
   }
-  
+
   bool supported = supported_modes & (1 << (mode - 1));
-  
+
   bool below_max = mode <= 32;
   bool above_min = mode > 0;
   return below_max && above_min && supported;
@@ -73,14 +86,18 @@ bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
 void Motor402::registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel)
 {
   std::scoped_lock map_lock(map_mutex_);
-  if (m && m->mode_id_ == id){ 
-    if(channel == 1){
+  if (m && m->mode_id_ == id)
+  {
+    if (channel == 1)
+    {
       modes1_.insert(std::make_pair(id, m));
     }
-    if(channel == 2){
+    if (channel == 2)
+    {
       modes2_.insert(std::make_pair(id, m));
     }
-    if (channel == 3){
+    if (channel == 3)
+    {
       modes3_.insert(std::make_pair(id, m));
     }
   }
@@ -386,10 +403,10 @@ void Motor402::handleDiag()
   }
 }
 
-bool Motor402::handleInit(uint8_t channel)
+bool Motor402::handleInit()
 {
-  channel_ = channel;
-  if(channel_ == 1){
+  if (channel_ == 1)
+  {
     status_word_entry_index = 0x6041;
     control_word_entry_index = 0x6040;
     op_mode_index = 0x6060;
@@ -397,11 +414,13 @@ bool Motor402::handleInit(uint8_t channel)
     supported_drive_modes_index = 0x6502;
 
     for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators1_.begin();
-        it != mode_allocators1_.end(); ++it)
+         it != mode_allocators1_.end(); ++it)
     {
       (it->second)();
     }
-  }else if(channel_ == 2){
+  }
+  else if (channel_ == 2)
+  {
     status_word_entry_index = 0x6841;
     control_word_entry_index = 0x6840;
     op_mode_index = 0x6860;
@@ -413,7 +432,9 @@ bool Motor402::handleInit(uint8_t channel)
     {
       (it->second)();
     }
-  }else if(channel_ == 3){
+  }
+  else if (channel_ == 3)
+  {
     status_word_entry_index = 0x7041;
     control_word_entry_index = 0x7040;
     op_mode_index = 0x7060;
@@ -435,7 +456,7 @@ bool Motor402::handleInit(uint8_t channel)
   }
   {
     std::scoped_lock lock(cw_mutex_);
-    control_word_ = 0; 
+    control_word_ = 0;
     start_fault_reset_ = true;
   }
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");

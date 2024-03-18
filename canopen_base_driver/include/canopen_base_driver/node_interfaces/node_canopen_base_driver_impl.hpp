@@ -20,10 +20,10 @@
 using namespace ros2_canopen::node_interfaces;
 
 template <class NODETYPE>
-NodeCanopenBaseDriver<NODETYPE>::NodeCanopenBaseDriver(NODETYPE * node)
-: ros2_canopen::node_interfaces::NodeCanopenDriver<NODETYPE>(node),
-  diagnostic_enabled_(false),
-  diagnostic_collector_(new DiagnosticsCollector())
+NodeCanopenBaseDriver<NODETYPE>::NodeCanopenBaseDriver(NODETYPE* node)
+  : ros2_canopen::node_interfaces::NodeCanopenDriver<NODETYPE>(node)
+  , diagnostic_enabled_(false)
+  , diagnostic_collector_(new DiagnosticsCollector())
 {
 }
 
@@ -64,9 +64,7 @@ void NodeCanopenBaseDriver<rclcpp_lifecycle::LifecycleNode>::configure(bool call
   }
   catch (...)
   {
-    RCLCPP_ERROR(
-      this->node_->get_logger(),
-      "Could not read enable diagnostics from config, setting to false.");
+    RCLCPP_ERROR(this->node_->get_logger(), "Could not read enable diagnostics from config, setting to false.");
     diagnostic_enabled_ = false;
   }
   if (diagnostic_enabled_.load())
@@ -77,9 +75,7 @@ void NodeCanopenBaseDriver<rclcpp_lifecycle::LifecycleNode>::configure(bool call
     }
     catch (...)
     {
-      RCLCPP_ERROR(
-        this->node_->get_logger(),
-        "Could not read diagnostics period from config, setting to 1000ms");
+      RCLCPP_ERROR(this->node_->get_logger(), "Could not read diagnostics period from config, setting to 1000ms");
       diagnostic_period_ms_ = 1000;
     }
 
@@ -119,9 +115,7 @@ void NodeCanopenBaseDriver<rclcpp::Node>::configure(bool called_from_base)
   }
   catch (...)
   {
-    RCLCPP_ERROR(
-      this->node_->get_logger(),
-      "Could not read enable diagnostics from config, setting to false.");
+    RCLCPP_ERROR(this->node_->get_logger(), "Could not read enable diagnostics from config, setting to false.");
     diagnostic_enabled_ = false;
   }
   if (diagnostic_enabled_.load())
@@ -132,9 +126,7 @@ void NodeCanopenBaseDriver<rclcpp::Node>::configure(bool called_from_base)
     }
     catch (...)
     {
-      RCLCPP_ERROR(
-        this->node_->get_logger(),
-        "Could not read diagnostics period from config, setting to 1000ms");
+      RCLCPP_ERROR(this->node_->get_logger(), "Could not read diagnostics period from config, setting to 1000ms");
       diagnostic_period_ms_ = 1000;
     }
 
@@ -146,29 +138,26 @@ void NodeCanopenBaseDriver<rclcpp::Node>::configure(bool called_from_base)
 template <class NODETYPE>
 void NodeCanopenBaseDriver<NODETYPE>::activate(bool called_from_base)
 {
-  nmt_state_publisher_thread_ =
-    std::thread(std::bind(&NodeCanopenBaseDriver<NODETYPE>::nmt_listener, this));
+  nmt_state_publisher_thread_ = std::thread(std::bind(&NodeCanopenBaseDriver<NODETYPE>::nmt_listener, this));
   emcy_queue_ = this->lely_driver_->get_emcy_queue();
   rpdo_queue_ = this->lely_driver_->get_rpdo_queue();
   if (polling_)
   {
     RCLCPP_INFO(this->node_->get_logger(), "Starting with polling mode.");
-    poll_timer_ = this->node_->create_wall_timer(
-      std::chrono::milliseconds(period_ms_),
-      std::bind(&NodeCanopenBaseDriver<NODETYPE>::poll_timer_callback, this), this->timer_cbg_);
+    poll_timer_ = this->node_->create_wall_timer(std::chrono::milliseconds(period_ms_),
+                                                 std::bind(&NodeCanopenBaseDriver<NODETYPE>::poll_timer_callback, this),
+                                                 this->timer_cbg_);
   }
   else
   {
     RCLCPP_INFO(this->node_->get_logger(), "Starting with event mode.");
-    this->lely_driver_->set_sync_function(
-      std::bind(&NodeCanopenBaseDriver<NODETYPE>::poll_timer_callback, this));
+    this->lely_driver_->set_sync_function(std::bind(&NodeCanopenBaseDriver<NODETYPE>::poll_timer_callback, this));
   }
 
   if (diagnostic_enabled_.load())
   {
     RCLCPP_INFO(this->node_->get_logger(), "Starting with diagnostics enabled.");
-    diagnostic_updater_->add(
-      "diagnostic updater", this, &NodeCanopenBaseDriver<NODETYPE>::diagnostic_callback);
+    diagnostic_updater_->add("diagnostic updater", this, &NodeCanopenBaseDriver<NODETYPE>::diagnostic_callback);
   }
 }
 
@@ -205,16 +194,13 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
   std::shared_ptr<std::promise<std::shared_ptr<ros2_canopen::LelyDriverBridge>>> prom;
   prom = std::make_shared<std::promise<std::shared_ptr<ros2_canopen::LelyDriverBridge>>>();
   std::future<std::shared_ptr<ros2_canopen::LelyDriverBridge>> f = prom->get_future();
-  this->exec_->post(
-    [this, prom]()
-    {
-      std::scoped_lock<std::mutex> lock(this->driver_mutex_);
-      this->lely_driver_ = std::make_shared<ros2_canopen::LelyDriverBridge>(
-        *(this->exec_), *(this->master_), this->node_id_, this->node_->get_name(), this->eds_,
-        this->bin_);
-      this->driver_ = std::static_pointer_cast<lely::canopen::BasicDriver>(this->lely_driver_);
-      prom->set_value(lely_driver_);
-    });
+  this->exec_->post([this, prom]() {
+    std::scoped_lock<std::mutex> lock(this->driver_mutex_);
+    this->lely_driver_ = std::make_shared<ros2_canopen::LelyDriverBridge>(
+        *(this->exec_), *(this->master_), this->node_id_, this->node_->get_name(), this->eds_, this->bin_);
+    this->driver_ = std::static_pointer_cast<lely::canopen::BasicDriver>(this->lely_driver_);
+    prom->set_value(lely_driver_);
+  });
 
   auto future_status = f.wait_for(this->non_transmit_timeout_);
   if (future_status != std::future_status::ready)
@@ -223,16 +209,16 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
     throw DriverException("add_to_master: adding timed out");
   }
   this->lely_driver_ = f.get();
-  this->lely_driver_->Boot();
   this->driver_ = std::static_pointer_cast<lely::canopen::BasicDriver>(this->lely_driver_);
   if (!this->lely_driver_->IsReady())
   {
     RCLCPP_WARN(this->node_->get_logger(), "Wait for device to boot.");
+    this->lely_driver_->Boot();
     try
     {
       this->lely_driver_->wait_for_boot();
     }
-    catch (const std::exception & e)
+    catch (const std::exception& e)
     {
       RCLCPP_ERROR(this->node_->get_logger(), e.what());
     }
@@ -241,8 +227,8 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
 
   if (diagnostic_enabled_.load())
   {
-    diagnostic_collector_->updateAll(
-      diagnostic_msgs::msg::DiagnosticStatus::OK, "Device ready", "DEVICE", "Added to master.");
+    diagnostic_collector_->updateAll(diagnostic_msgs::msg::DiagnosticStatus::OK, "Device ready", "DEVICE",
+                                     "Added to master.");
   }
 }
 
@@ -251,13 +237,11 @@ void NodeCanopenBaseDriver<NODETYPE>::remove_from_master()
 {
   std::shared_ptr<std::promise<void>> prom = std::make_shared<std::promise<void>>();
   auto f = prom->get_future();
-  this->exec_->post(
-    [this, prom]()
-    {
-      this->driver_.reset();
-      this->lely_driver_.reset();
-      prom->set_value();
-    });
+  this->exec_->post([this, prom]() {
+    this->driver_.reset();
+    this->lely_driver_.reset();
+    prom->set_value();
+  });
 
   auto future_status = f.wait_for(this->non_transmit_timeout_);
   if (future_status != std::future_status::ready)
@@ -266,9 +250,8 @@ void NodeCanopenBaseDriver<NODETYPE>::remove_from_master()
   }
   if (diagnostic_enabled_.load())
   {
-    diagnostic_collector_->updateAll(
-      diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Device removed", "DEVICE",
-      "Removed from master.");
+    diagnostic_collector_->updateAll(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Device removed", "DEVICE",
+                                     "Removed from master.");
   }
 }
 template <class NODETYPE>
@@ -283,7 +266,8 @@ void NodeCanopenBaseDriver<NODETYPE>::nmt_listener()
     }
     while (f.wait_for(this->non_transmit_timeout_) != std::future_status::ready)
     {
-      if (!this->activated_.load()) return;
+      if (!this->activated_.load())
+        return;
     }
     try
     {
@@ -294,7 +278,7 @@ void NodeCanopenBaseDriver<NODETYPE>::nmt_listener()
       }
       on_nmt(state);
     }
-    catch (const std::future_error & e)
+    catch (const std::future_error& e)
     {
       break;
     }
@@ -313,15 +297,14 @@ void NodeCanopenBaseDriver<NODETYPE>::on_rpdo(COData data)
 template <class NODETYPE>
 void NodeCanopenBaseDriver<NODETYPE>::on_emcy(COEmcy emcy)
 {
-  diagnostic_collector_->summary(
-    diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Emergency message received");
+  diagnostic_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Emergency message received");
   std::string emcy_msg = "Emergency message: ";
   emcy_msg.append("eec: ");
   emcy_msg.append(std::to_string(emcy.eec));
   emcy_msg.append(" er: ");
   emcy_msg.append(std::to_string(emcy.er));
   emcy_msg.append(" msef: ");
-  for (auto & msef : emcy.msef)
+  for (auto& msef : emcy.msef)
   {
     emcy_msg.append(std::to_string(msef));
     emcy_msg.append(" ");
@@ -339,7 +322,8 @@ void NodeCanopenBaseDriver<NODETYPE>::rdpo_listener()
     ros2_canopen::COData rpdo;
     while (!q->wait_and_pop_for(this->non_transmit_timeout_, rpdo))
     {
-      if (!this->activated_.load()) return;
+      if (!this->activated_.load())
+        return;
     }
     try
     {
@@ -349,7 +333,7 @@ void NodeCanopenBaseDriver<NODETYPE>::rdpo_listener()
       }
       on_rpdo(rpdo);
     }
-    catch (const std::exception & e)
+    catch (const std::exception& e)
     {
       RCLCPP_ERROR_STREAM(this->node_->get_logger(), "RPDO Listener error: " << e.what());
       break;
@@ -374,7 +358,7 @@ void NodeCanopenBaseDriver<NODETYPE>::poll_timer_callback()
       }
       on_emcy(opt.value());
     }
-    catch (const std::exception & e)
+    catch (const std::exception& e)
     {
       RCLCPP_ERROR_STREAM(this->node_->get_logger(), "EMCY poll error: " << e.what());
       break;
@@ -395,7 +379,7 @@ void NodeCanopenBaseDriver<NODETYPE>::poll_timer_callback()
       }
       on_rpdo(opt.value());
     }
-    catch (const std::exception & e)
+    catch (const std::exception& e)
     {
       RCLCPP_ERROR_STREAM(this->node_->get_logger(), "RPDO Poll error: " << e.what());
       break;
@@ -413,7 +397,8 @@ void NodeCanopenBaseDriver<NODETYPE>::emcy_listener()
     ros2_canopen::COEmcy emcy;
     while (!q->wait_and_pop_for(this->non_transmit_timeout_, emcy))
     {
-      if (!this->activated_.load()) return;
+      if (!this->activated_.load())
+        return;
     }
     try
     {
@@ -423,7 +408,7 @@ void NodeCanopenBaseDriver<NODETYPE>::emcy_listener()
       }
       on_emcy(emcy);
     }
-    catch (const std::exception & e)
+    catch (const std::exception& e)
     {
       RCLCPP_ERROR_STREAM(this->node_->get_logger(), "EMCY Listener error: " << e.what());
       break;
@@ -432,8 +417,7 @@ void NodeCanopenBaseDriver<NODETYPE>::emcy_listener()
 }
 
 template <class NODETYPE>
-void NodeCanopenBaseDriver<NODETYPE>::diagnostic_callback(
-  diagnostic_updater::DiagnosticStatusWrapper & stat)
+void NodeCanopenBaseDriver<NODETYPE>::diagnostic_callback(diagnostic_updater::DiagnosticStatusWrapper& stat)
 {
 }
 

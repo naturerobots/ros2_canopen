@@ -43,114 +43,155 @@ template <>
 void NodeCanopen402Driver<rclcpp::Node>::init(bool called_from_base)
 {
   NodeCanopenProxyDriver<rclcpp::Node>::init(false);
-  publish_joint_state = this->node_->create_publisher<sensor_msgs::msg::JointState>("~/joint_states", 1);
-  // handle_init_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/init").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_init, this, std::placeholders::_1,
-  //     std::placeholders::_2));
-
-  // handle_halt_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/halt").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_halt, this, std::placeholders::_1,
-  //     std::placeholders::_2));
-
-  // handle_recover_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/recover").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_recover, this, std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_mode_position_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/position_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_mode_position, this, std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_mode_velocity_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/velocity_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_mode_velocity, this, std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_mode_cyclic_velocity_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/cyclic_velocity_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_mode_cyclic_velocity, this, std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_mode_cyclic_position_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/cyclic_position_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_mode_cyclic_position, this, std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_mode_interpolated_position_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/interpolated_position_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_mode_interpolated_position, this,
-  //     std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_mode_torque_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/torque_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_mode_torque, this, std::placeholders::_1,
-  //               std::placeholders::_2));
-
-  // handle_set_target_service = this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
-  //     std::string(this->node_->get_name()).append("/target").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp::Node>::handle_set_target, this, std::placeholders::_1,
-  //               std::placeholders::_2));
 }
 
 template <>
 void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::init(bool called_from_base)
 {
   NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::init(false);
-  publish_joint_state = this->node_->create_publisher<sensor_msgs::msg::JointState>("~/joint_states", 10);
-  // handle_init_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/init").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_init, this, std::placeholders::_1,
-  //               std::placeholders::_2));
+}
 
-  // handle_halt_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/halt").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_halt, this, std::placeholders::_1,
-  //               std::placeholders::_2));
+template <>
+void NodeCanopen402Driver<rclcpp::Node>::setupRosInterfaces(const std::string& joint_name, uint8_t channel)
+{
+  publish_joint_state[channel] =
+      this->node_->create_publisher<sensor_msgs::msg::JointState>("~/" + joint_name + "/joint_states", 10);
 
-  // handle_recover_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/recover").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_recover, this, std::placeholders::_1,
-  //               std::placeholders::_2));
+  handle_init_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~/" + joint_name + "/init", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                   std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_init(request, response, channel);
+      });
 
-  // handle_set_mode_position_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/position_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_mode_position, this,
-  //               std::placeholders::_1, std::placeholders::_2));
+  handle_halt_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                  std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_halt(request, response, channel);
+      });
 
-  // handle_set_mode_velocity_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/velocity_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_mode_velocity, this,
-  //               std::placeholders::_1, std::placeholders::_2));
+  handle_recover_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                     std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_recover(request, response, channel);
+      });
 
-  // handle_set_mode_cyclic_velocity_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/cyclic_velocity_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_mode_cyclic_velocity, this,
-  //               std::placeholders::_1, std::placeholders::_2));
+  handle_set_mode_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Position);
+      });
 
-  // handle_set_mode_cyclic_position_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/cyclic_position_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_mode_cyclic_position, this,
-  //               std::placeholders::_1, std::placeholders::_2));
+  handle_set_mode_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Velocity);
+      });
 
-  // handle_set_mode_interpolated_position_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/interpolated_position_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_mode_interpolated_position, this,
-  //               std::placeholders::_1, std::placeholders::_2));
+  handle_set_mode_cyclic_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/cyclic_velocity_mode",
+      [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Velocity);
+      });
 
-  // handle_set_mode_torque_service = this->node_->create_service<std_srvs::srv::Trigger>(
-  //     std::string(this->node_->get_name()).append("/torque_mode").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_mode_torque, this,
-  //               std::placeholders::_1, std::placeholders::_2));
+  handle_set_mode_cyclic_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/cyclic_position_mode",
+      [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Position);
+      });
 
-  // handle_set_target_service = this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
-  //     std::string(this->node_->get_name()).append("/target").c_str(),
-  //     std::bind(&NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::handle_set_target, this,
-  //     std::placeholders::_1,
-  //               std::placeholders::_2));
+  handle_set_mode_interpolated_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/interpolated_position_mode",
+      [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Interpolated_Position);
+      });
+
+  handle_set_mode_torque_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                         std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Torque);
+      });
+
+  handle_set_target_service[channel] = this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
+      "~" + joint_name + "/target",
+      [this, channel](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+                      canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
+        this->handle_set_target(request, response, channel);
+      });
+}
+
+template <>
+void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(const std::string& joint_name,
+                                                                               uint8_t channel)
+{
+  publish_joint_state[channel] =
+      this->node_->create_publisher<sensor_msgs::msg::JointState>("~/" + joint_name + "/joint_states", 10);
+
+  handle_init_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~/" + joint_name + "/init", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                   std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_init(request, response, channel);
+      });
+
+  handle_halt_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                  std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_halt(request, response, channel);
+      });
+
+  handle_recover_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                     std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_recover(request, response, channel);
+      });
+
+  handle_set_mode_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Position);
+      });
+
+  handle_set_mode_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Velocity);
+      });
+
+  handle_set_mode_cyclic_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/cyclic_velocity_mode",
+      [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Velocity);
+      });
+
+  handle_set_mode_cyclic_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/cyclic_position_mode",
+      [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Position);
+      });
+
+  handle_set_mode_interpolated_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/interpolated_position_mode",
+      [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                      std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Interpolated_Position);
+      });
+
+  handle_set_mode_torque_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+      "~" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                         std_srvs::srv::Trigger::Response::SharedPtr response) {
+        this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Torque);
+      });
+
+  handle_set_target_service[channel] = this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
+      "~" + joint_name + "/target",
+      [this, channel](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+                      canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
+        this->handle_set_target(request, response, channel);
+      });
 }
 
 template <class NODETYPE>
@@ -250,6 +291,9 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
                                                   joint_name.value(), scale_pos_to_dev.value_or(1000.0),
                                                   scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
                                                   scale_vel_from_dev.value_or(0.001), channel);
+
+    // create publishers and subscribers
+    setupRosInterfaces(joint_name.value(), channel);
   }
 }
 
@@ -293,7 +337,7 @@ void NodeCanopen402Driver<NODETYPE>::publish()
     js_msg.position.push_back(motor.second->get_position());
     js_msg.velocity.push_back(motor.second->get_speed());
     js_msg.effort.push_back(0.0);
-    publish_joint_state->publish(js_msg);
+    publish_joint_state[motor.first]->publish(js_msg);
   }
 }
 
@@ -309,103 +353,50 @@ void NodeCanopen402Driver<NODETYPE>::add_to_master()
 
 template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::handle_init(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                 std_srvs::srv::Trigger::Response::SharedPtr response)
+                                                 std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
 {
-  // if (this->activated_.load())
-  // {
-  //   response->success = true;
-  //   for (const auto& motor : motors_)
-  //   {
-  //     bool temp = motor.second->handleInit();
-  //     response->success &= temp;
-  //   }
-  // }
+  if (this->activated_.load())
+  {
+    bool temp = motors_[channel]->handleInit();
+    response->success = temp;
+  }
 }
 template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::handle_recover(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                    std_srvs::srv::Trigger::Response::SharedPtr response)
+                                                    std_srvs::srv::Trigger::Response::SharedPtr response,
+                                                    uint8_t channel)
 {
-  // if (this->activated_.load())
-  // {
-  //   response->success = motor_->handleRecover();
-  // }
+  if (this->activated_.load())
+  {
+    response->success = motors_[channel]->handleRecover();
+  }
 }
 template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::handle_halt(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                 std_srvs::srv::Trigger::Response::SharedPtr response)
+                                                 std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
 {
-  // if (this->activated_.load())
-  // {
-  //   response->success = motor_->handleHalt();
-  // }
+  if (this->activated_.load())
+  {
+    response->success = motors_[channel]->handleHalt();
+  }
 }
 template <class NODETYPE>
-void NodeCanopen402Driver<NODETYPE>::handle_set_mode_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                              std_srvs::srv::Trigger::Response::SharedPtr response)
+void NodeCanopen402Driver<NODETYPE>::handle_set_operation_mode(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                               std_srvs::srv::Trigger::Response::SharedPtr response,
+                                                               uint8_t channel, uint16_t mode)
 {
-  // response->success = set_mode_position();
-}
-
-template <class NODETYPE>
-void NodeCanopen402Driver<NODETYPE>::handle_set_mode_velocity(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                              std_srvs::srv::Trigger::Response::SharedPtr response)
-{
-  // response->success = set_mode_velocity();
-}
-
-template <class NODETYPE>
-void NodeCanopen402Driver<NODETYPE>::handle_set_mode_cyclic_position(
-    const std_srvs::srv::Trigger::Request::SharedPtr request, std_srvs::srv::Trigger::Response::SharedPtr response)
-{
-  // response->success = set_mode_cyclic_position();
-}
-
-template <class NODETYPE>
-void NodeCanopen402Driver<NODETYPE>::handle_set_mode_interpolated_position(
-    const std_srvs::srv::Trigger::Request::SharedPtr request, std_srvs::srv::Trigger::Response::SharedPtr response)
-{
-  // response->success = set_mode_interpolated_position();
-}
-
-template <class NODETYPE>
-void NodeCanopen402Driver<NODETYPE>::handle_set_mode_cyclic_velocity(
-    const std_srvs::srv::Trigger::Request::SharedPtr request, std_srvs::srv::Trigger::Response::SharedPtr response)
-{
-  // response->success = set_mode_cyclic_velocity();
-}
-template <class NODETYPE>
-void NodeCanopen402Driver<NODETYPE>::handle_set_mode_torque(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                            std_srvs::srv::Trigger::Response::SharedPtr response)
-{
-  // response->success = set_mode_torque();
+  response->success = set_operation_mode(channel, mode);
 }
 
 template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::handle_set_target(
     const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response)
+    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response, uint8_t channel)
 {
-  // if (this->activated_.load())
-  // {
-  //   auto mode = motor_->getMode();
-  //   double target;
-  //   if ((mode == MotorBase::Profiled_Position) or (mode == MotorBase::Cyclic_Synchronous_Position) or
-  //       (mode == MotorBase::Interpolated_Position))
-  //   {
-  //     target = request->target * scale_pos_to_dev_;
-  //   }
-  //   else if ((mode == MotorBase::Velocity) or (mode == MotorBase::Profiled_Velocity) or
-  //            (mode == MotorBase::Cyclic_Synchronous_Velocity))
-  //   {
-  //     target = request->target * scale_vel_to_dev_;
-  //   }
-  //   else
-  //   {
-  //     target = request->target;
-  //   }
-
-  //   response->success = motor_->setTarget(target);
-  // }
+  if (this->activated_.load())
+  {
+    response->success = set_target(channel, request->target);
+  }
 }
 
 template <class NODETYPE>

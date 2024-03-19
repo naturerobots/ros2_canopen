@@ -40,17 +40,17 @@ class NodeCanopen402Driver : public NodeCanopenProxyDriver<NODETYPE>
 protected:
   std::map<uint8_t, std::shared_ptr<Motor402>> motors_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_init_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_halt_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_recover_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_position_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_torque_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_velocity_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_cyclic_velocity_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_cyclic_position_service;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_set_mode_interpolated_position_service;
-  rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr handle_set_target_service;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr publish_joint_state;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_init_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_halt_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_recover_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_position_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_torque_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_velocity_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_cyclic_velocity_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_cyclic_position_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_interpolated_position_service;
+  std::map<uint8_t, rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr> handle_set_target_service;
+  std::map<uint8_t, rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr> publish_joint_state;
 
   void publish();
   virtual void poll_timer_callback() override;
@@ -58,6 +58,8 @@ protected:
 
 public:
   NodeCanopen402Driver(NODETYPE* node);
+
+  void setupRosInterfaces(const std::string& joint_name, uint8_t channel);
 
   virtual void init(bool called_from_base) override;
   virtual void configure(bool called_from_base) override;
@@ -95,7 +97,7 @@ public:
    * @param [out] response
    */
   void handle_init(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                   std_srvs::srv::Trigger::Response::SharedPtr response);
+                   std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
 
   /**
    * @brief Method to initialise device
@@ -120,7 +122,7 @@ public:
    * @param [out] response
    */
   void handle_recover(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                      std_srvs::srv::Trigger::Response::SharedPtr response);
+                      std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
 
   /**
    * @brief Method to recover device
@@ -145,7 +147,7 @@ public:
    * @param [out] response
    */
   void handle_halt(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                   std_srvs::srv::Trigger::Response::SharedPtr response);
+                   std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
 
   /**
    * @brief Method to halt device
@@ -161,19 +163,6 @@ public:
   bool halt_motor(uint8_t channel);
 
   /**
-   * @brief Service Callback to set profiled position mode
-   *
-   * Calls Motor402::enterModeAndWait with Profiled Position Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Profiled Position Mode.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_mode_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
    * @brief Method to set desired mode
    *
    * Calls Motor402::enterModeAndWait with desired Mode as
@@ -186,69 +175,17 @@ public:
   bool set_operation_mode(uint8_t channel, uint16_t mode);
 
   /**
-   * @brief Service Callback to set profiled velocity mode
+   * @brief Service Callback to set desired mode
    *
-   * Calls Motor402::enterModeAndWait with Profiled Velocity Mode as
+   * Calls Motor402::enterModeAndWait with desired Mode as
    * Target Operation Mode. If successful, the motor was transitioned
-   * to Profiled Velocity Mode.
+   * to desired Mode.
    *
    * @param [in] request
    * @param [out] response
    */
-  void handle_set_mode_velocity(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Service Callback to set cyclic position mode
-   *
-   * Calls Motor402::enterModeAndWait with Cyclic Position Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Cyclic Position Mode.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_mode_cyclic_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                       std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Service Callback to set interpolated position mode
-   *
-   * Calls Motor402::enterModeAndWait with Interpolated Position Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Interpolated Position Mode. This only supports linear mode.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_mode_interpolated_position(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                             std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Service Callback to set cyclic velocity mode
-   *
-   * Calls Motor402::enterModeAndWait with Cyclic Velocity Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Cyclic Velocity Mode.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_mode_cyclic_velocity(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                       std_srvs::srv::Trigger::Response::SharedPtr response);
-
-  /**
-   * @brief Service Callback to set profiled torque mode
-   *
-   * Calls Motor402::enterModeAndWait with Profiled Torque Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to Profiled Torque Mode.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_mode_torque(const std_srvs::srv::Trigger::Request::SharedPtr request,
-                              std_srvs::srv::Trigger::Response::SharedPtr response);
+  void handle_set_operation_mode(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                 std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel, uint16_t mode);
 
   /**
    * @brief Service Callback to set target
@@ -261,7 +198,7 @@ public:
    * @param [out] response
    */
   void handle_set_target(const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-                         canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response);
+                         canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response, uint8_t channel);
 
   /**
    * @brief Method to set target

@@ -109,6 +109,11 @@ public:
   {
     return node_canopen_402_driver_->set_operation_mode(channel, mode);
   }
+
+  const std::map<uint8_t, std::shared_ptr<Motor402>>& get_available_motors()
+  {
+    return node_canopen_402_driver_->get_available_motors();
+  }
 };
 }  // namespace ros2_canopen
 

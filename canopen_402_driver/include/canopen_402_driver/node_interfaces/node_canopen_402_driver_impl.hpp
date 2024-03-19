@@ -209,7 +209,7 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
   YAML::Node channels_conf;
   try
   {
-    channels_conf = this->config_["channels"];
+    channels_conf = this->config_["motor_channels"];
   }
   catch (...)
   {

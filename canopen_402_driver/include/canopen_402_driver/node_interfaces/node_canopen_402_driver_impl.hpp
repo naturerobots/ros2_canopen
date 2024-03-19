@@ -301,6 +301,7 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
                                    joint_name.value(), scale_pos_to_dev.value_or(1000.0),
                                    scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
                                    scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel);
+    motor_channels_.push_back(channel);
 
     // create publishers and subscribers
     setupRosInterfaces(joint_name.value(), channel);

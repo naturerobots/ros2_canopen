@@ -176,14 +176,14 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
   {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
 
-    for (auto motor : motion_controller_driver->get_available_motors())
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
-      if (!motion_controller_driver->init_motor(motor.first))
+      if (!motion_controller_driver->init_motor(motor_channel))
       {
         return hardware_interface::CallbackReturn::ERROR;
       }
 
-      if (!motion_controller_driver->set_default_operation_mode(motor.first))
+      if (!motion_controller_driver->set_default_operation_mode(motor_channel))
       {
         return hardware_interface::CallbackReturn::ERROR;
       }
@@ -209,12 +209,14 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
   {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
 
-    for (auto motor : motion_controller_driver->get_available_motors())
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
       // get position
-      motor_data_[motor.second->getJointName()].actual_position = motion_controller_driver->get_position(motor.first);
+      motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position =
+          motion_controller_driver->get_position(motor_channel);
       // get speed
-      motor_data_[motor.second->getJointName()].actual_speed = motion_controller_driver->get_speed(motor.first);
+      motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed =
+          motion_controller_driver->get_speed(motor_channel);
     }
   }
 
@@ -250,9 +252,9 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
       motion_controller_driver->tpdo_transmit(it->second.tpdo_data.original_data);
     }
 
-    for (auto motor : motion_controller_driver->get_available_motors())
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
-      const uint16_t& mode = motion_controller_driver->get_mode(motor.first);
+      const uint16_t& mode = motion_controller_driver->get_mode(motor_channel);
       switch (mode)
       {
         case MotorBase::No_Mode:
@@ -260,16 +262,21 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         case MotorBase::Profiled_Position:
         case MotorBase::Cyclic_Synchronous_Position:
         case MotorBase::Interpolated_Position:
-          motion_controller_driver->set_target(motor.first, motor_data_[motor.second->getJointName()].target_position);
+          motion_controller_driver->set_target(
+              motor_channel,
+              motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_position);
           break;
         case MotorBase::Profiled_Velocity:
         case MotorBase::Velocity:
         case MotorBase::Cyclic_Synchronous_Velocity:
-          motion_controller_driver->set_target(motor.first, motor_data_[motor.second->getJointName()].target_velocity);
+          motion_controller_driver->set_target(
+              motor_channel,
+              motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_velocity);
           break;
         case MotorBase::Profiled_Torque:
         case MotorBase::Cyclic_Synchronous_Torque:
-          motion_controller_driver->set_target(motor.first, motor_data_[motor.second->getJointName()].target_torque);
+          motion_controller_driver->set_target(
+              motor_channel, motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_torque);
           break;
         default:
           RCLCPP_INFO(kLogger, "Mode %u not supported", mode);

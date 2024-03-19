@@ -41,9 +41,6 @@ struct MotorNodeData
   double actual_position;
   double actual_speed;
 
-  // mode control
-  uint16_t operation_mode;
-
   // setpoint
   double target_position;
   double target_velocity;

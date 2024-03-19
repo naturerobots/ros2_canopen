@@ -39,7 +39,8 @@ class NodeCanopen402Driver : public NodeCanopenProxyDriver<NODETYPE>
                 "NODETYPE must derive from rclcpp::Node or rclcpp_lifecycle::LifecycleNode");
 
 protected:
-  std::map<uint8_t, std::shared_ptr<Motor402>> motors_;
+  std::map<uint8_t, std::shared_ptr<Motor402>> motors_;  // map from channel to motor
+  std::vector<uint8_t> motor_channels_;                  // list of all registered motor channels
   rclcpp::TimerBase::SharedPtr timer_;
   std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_init_service;
   std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_halt_service;
@@ -83,9 +84,14 @@ public:
     return motors_[channel]->getMode();
   }
 
-  const std::map<uint8_t, std::shared_ptr<Motor402>>& get_available_motors()
+  const std::vector<uint8_t>& get_available_motor_channels()
   {
-    return motors_;
+    return motor_channels_;
+  }
+
+  const std::string& get_motor_joint_name(uint8_t channel)
+  {
+    return motors_[channel]->getJointName();
   }
 
   /**

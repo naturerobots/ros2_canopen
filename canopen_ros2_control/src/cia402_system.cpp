@@ -178,6 +178,11 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
     for (auto motor : motion_controller_driver->get_available_motors())
     {
+      if (!motion_controller_driver->init_motor(motor.first))
+      {
+        return hardware_interface::CallbackReturn::ERROR;
+      }
+
       if (!motion_controller_driver->set_default_operation_mode(motor.first))
       {
         return hardware_interface::CallbackReturn::ERROR;

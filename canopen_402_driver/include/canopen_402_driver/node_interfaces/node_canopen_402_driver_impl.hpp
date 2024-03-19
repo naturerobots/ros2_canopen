@@ -1,3 +1,4 @@
+//    Copyright 2024 Malte kleine Piening, Nature Robots GmbH
 //    Copyright 2023 Christoph Hellmann Santos
 //                          Vishnuprasad Prachandabhanu
 //                          Lovro Ivanov
@@ -231,6 +232,7 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     std::optional<double> scale_vel_to_dev;
     std::optional<double> scale_vel_from_dev;
     std::optional<int> switching_state;
+    std::optional<int> default_operation_mode;
     try
     {
       joint_name = std::optional(channel_conf["joint_name"].as<std::string>());
@@ -284,13 +286,21 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     catch (...)
     {
     }
+    try
+    {
+      default_operation_mode = std::optional(channel_conf["default_operation_mode"].as<int>());
+    }
+    catch (...)
+    {
+    }
 
-    motors_[channel] = std::make_shared<Motor402>(nullptr,
-                                                  (ros2_canopen::State402::InternalState)switching_state.value_or(
-                                                      (int)ros2_canopen::State402::InternalState::Operation_Enable),
-                                                  joint_name.value(), scale_pos_to_dev.value_or(1000.0),
-                                                  scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
-                                                  scale_vel_from_dev.value_or(0.001), channel);
+    motors_[channel] =
+        std::make_shared<Motor402>(nullptr,
+                                   (ros2_canopen::State402::InternalState)switching_state.value_or(
+                                       (int)ros2_canopen::State402::InternalState::Operation_Enable),
+                                   joint_name.value(), scale_pos_to_dev.value_or(1000.0),
+                                   scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
+                                   scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel);
 
     // create publishers and subscribers
     setupRosInterfaces(joint_name.value(), channel);
@@ -454,6 +464,12 @@ bool NodeCanopen402Driver<NODETYPE>::set_operation_mode(uint8_t channel, uint16_
     }
   }
   return false;
+}
+
+template <class NODETYPE>
+bool NodeCanopen402Driver<NODETYPE>::set_default_operation_mode(uint8_t channel)
+{
+  return set_operation_mode(channel, motors_[channel]->getDefaultOperationMode());
 }
 
 template <class NODETYPE>

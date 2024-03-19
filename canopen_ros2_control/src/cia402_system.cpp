@@ -1,3 +1,4 @@
+// Copyright (c) 2024, Malte kleine Piening, Nature Robots GmbH
 // Copyright (c) 2022, StoglRobotics
 // Copyright (c) 2022, Stogl Robotics Consulting UG (haftungsbeschränkt) (template)
 //
@@ -33,10 +34,11 @@ auto const kLogger = rclcpp::get_logger("Cia402System");
 namespace canopen_ros2_control
 {
 
-Cia402System::Cia402System() : CanopenSystem() {}
+Cia402System::Cia402System() : CanopenSystem()
+{
+}
 
-hardware_interface::CallbackReturn Cia402System::on_init(
-  const hardware_interface::HardwareInfo & info)
+hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interface::HardwareInfo& info)
 {
   if (CanopenSystem::on_init(info) != CallbackReturn::SUCCESS)
   {
@@ -48,39 +50,36 @@ hardware_interface::CallbackReturn Cia402System::on_init(
 
 void Cia402System::initDeviceContainer()
 {
-  std::string tmp_master_bin = (info_.hardware_parameters["master_bin"] == "\"\"")
-                                 ? ""
-                                 : info_.hardware_parameters["master_bin"];
+  std::string tmp_master_bin =
+      (info_.hardware_parameters["master_bin"] == "\"\"") ? "" : info_.hardware_parameters["master_bin"];
 
-  device_container_->init(
-    info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
-    info_.hardware_parameters["bus_config"], tmp_master_bin);
+  device_container_->init(info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
+                          info_.hardware_parameters["bus_config"], tmp_master_bin);
   auto drivers = device_container_->get_registered_drivers();
+
   RCLCPP_INFO(kLogger, "Number of registered drivers: '%lu'", device_container_->count_drivers());
   for (auto it = drivers.begin(); it != drivers.end(); it++)
   {
     auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
-    auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id)
-    { canopen_data_[id].nmt_state.set_state(nmt_state); };
+    auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
+      canopen_data_[id].nmt_state.set_state(nmt_state);
+    };
     // register callback
     driver->register_nmt_state_cb(nmt_state_cb);
 
-    auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id)
-    { canopen_data_[id].rpdo_data.set_data(data); };
+    auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id) { canopen_data_[id].rpdo_data.set_data(data); };
     // register callback
     driver->register_rpdo_cb(rpdo_cb);
 
-    RCLCPP_INFO(
-      kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",
-      it->second->get_node_base_interface()->get_name(), it->first);
+    RCLCPP_INFO(kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",
+                it->second->get_node_base_interface()->get_name(), it->first);
   }
 
   RCLCPP_INFO(device_container_->get_logger(), "Initialisation successful.");
 }
 
-hardware_interface::CallbackReturn Cia402System::on_configure(
-  const rclcpp_lifecycle::State & previous_state)
+hardware_interface::CallbackReturn Cia402System::on_configure(const rclcpp_lifecycle::State& previous_state)
 {
   executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
   device_container_ = std::make_shared<ros2_canopen::DeviceContainer>(executor_);
@@ -130,12 +129,10 @@ std::vector<hardware_interface::StateInterface> Cia402System::export_state_inter
 
     // actual position
     state_interfaces.emplace_back(hardware_interface::StateInterface(
-      info_.joints[i].name, hardware_interface::HW_IF_POSITION,
-      &motor_data_[node_id].actual_position));
+        info_.joints[i].name, hardware_interface::HW_IF_POSITION, &motor_data_[info_.joints[i].name].actual_position));
     // actual speed
     state_interfaces.emplace_back(hardware_interface::StateInterface(
-      info_.joints[i].name, hardware_interface::HW_IF_VELOCITY,
-      &motor_data_[node_id].actual_speed));
+        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &motor_data_[info_.joints[i].name].actual_speed));
   }
 
   return state_interfaces;
@@ -160,84 +157,42 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
 
     // target
     command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, hardware_interface::HW_IF_POSITION,
-      &motor_data_[node_id].target.position_value));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, hardware_interface::HW_IF_VELOCITY,
-      &motor_data_[node_id].target.velocity_value));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, hardware_interface::HW_IF_EFFORT,
-      &motor_data_[node_id].target.torque_value));
-    // init
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "init_cmd", &motor_data_[node_id].init.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "init_fbk", &motor_data_[node_id].init.resp));
+        info_.joints[i].name, hardware_interface::HW_IF_POSITION, &motor_data_[info_.joints[i].name].target_position));
 
-    // halt
     command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "halt_cmd", &motor_data_[node_id].halt.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "halt_fbk", &motor_data_[node_id].halt.resp));
+        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &motor_data_[info_.joints[i].name].target_velocity));
 
-    // recover
     command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "recover_cmd", &motor_data_[node_id].recover.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "recover_fbk", &motor_data_[node_id].recover.resp));
-
-    // set position mode
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "position_mode_cmd", &motor_data_[node_id].position_mode.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "position_mode_fbk", &motor_data_[node_id].position_mode.resp));
-
-    // set velocity mode
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "velocity_mode_cmd", &motor_data_[node_id].velocity_mode.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "velocity_mode_fbk", &motor_data_[node_id].velocity_mode.resp));
-
-    // set cyclic velocity mode
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "cyclic_velocity_mode_cmd",
-      &motor_data_[node_id].cyclic_velocity_mode.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "cyclic_velocity_mode_fbk",
-      &motor_data_[node_id].cyclic_velocity_mode.resp));
-    // set cyclic position mode
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "cyclic_position_mode_cmd",
-      &motor_data_[node_id].cyclic_position_mode.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "cyclic_position_mode_fbk",
-      &motor_data_[node_id].cyclic_position_mode.resp));
-    // set interpolated position mode
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "interpolated_position_mode_cmd",
-      &motor_data_[node_id].interpolated_position_mode.ons_cmd));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-      info_.joints[i].name, "interpolated_position_mode_fbk",
-      &motor_data_[node_id].interpolated_position_mode.resp));
+        info_.joints[i].name, hardware_interface::HW_IF_EFFORT, &motor_data_[info_.joints[i].name].target_torque));
   }
 
   return command_interfaces;
 }
 
-hardware_interface::CallbackReturn Cia402System::on_activate(
-  const rclcpp_lifecycle::State & previous_state)
+hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = canopen_data_.begin(); it != canopen_data_.end(); ++it)
+  {
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+
+    for (auto motor : motion_controller_driver->get_available_motors())
+    {
+      if (!motion_controller_driver->set_default_operation_mode(motor.first))
+      {
+        return hardware_interface::CallbackReturn::ERROR;
+      }
+    }
+  }
   return CanopenSystem::on_activate(previous_state);
 }
 
-hardware_interface::CallbackReturn Cia402System::on_deactivate(
-  const rclcpp_lifecycle::State & previous_state)
+hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
   return CanopenSystem::on_deactivate(previous_state);
 }
 
-hardware_interface::return_type Cia402System::read(
-  const rclcpp::Time & time, const rclcpp::Duration & period)
+hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
   // TODO(anyone): read robot states
 
@@ -247,27 +202,29 @@ hardware_interface::return_type Cia402System::read(
 
   for (auto it = canopen_data_.begin(); it != canopen_data_.end(); ++it)
   {
-    auto motion_controller_driver =
-      std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
-    // get position
-    motor_data_[it->first].actual_position = motion_controller_driver->get_position();
-    // get speed
-    motor_data_[it->first].actual_speed = motion_controller_driver->get_speed();
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+
+    for (auto motor : motion_controller_driver->get_available_motors())
+    {
+      // get position
+      motor_data_[motor.second->getJointName()].actual_position = motion_controller_driver->get_position(motor.first);
+      // get speed
+      motor_data_[motor.second->getJointName()].actual_speed = motion_controller_driver->get_speed(motor.first);
+    }
   }
 
   return ret_val;
 }
 
-hardware_interface::return_type Cia402System::write(
-  const rclcpp::Time & time, const rclcpp::Duration & period)
+hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
   auto drivers = device_container_->get_registered_drivers();
 
   for (auto it = canopen_data_.begin(); it != canopen_data_.end(); ++it)
   {
     // TODO(livanov93): check casting
-    auto motion_controller_driver =
-      std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+
     // do same as in proxy system first - handle nmt, tpdo, rpdo
     // reset node nmt
     if (it->second.nmt_state.reset_command())
@@ -288,103 +245,35 @@ hardware_interface::return_type Cia402System::write(
       motion_controller_driver->tpdo_transmit(it->second.tpdo_data.original_data);
     }
 
-    // initialisation
-    handleInit(it->first, motion_controller_driver);
-
-    // halt
-    handleHalt(it->first, motion_controller_driver);
-
-    // recover
-    handleRecover(it->first, motion_controller_driver);
-
-    // mode switching
-    switchModes(it->first, motion_controller_driver);
-
-    const uint16_t & mode = motion_controller_driver->get_mode();
-
-    switch (mode)
+    for (auto motor : motion_controller_driver->get_available_motors())
     {
-      case MotorBase::No_Mode:
-        break;
-      case MotorBase::Profiled_Position:
-      case MotorBase::Cyclic_Synchronous_Position:
-      case MotorBase::Interpolated_Position:
-        motion_controller_driver->set_target(motor_data_[it->first].target.position_value);
-        break;
-      case MotorBase::Profiled_Velocity:
-      case MotorBase::Cyclic_Synchronous_Velocity:
-        motion_controller_driver->set_target(motor_data_[it->first].target.velocity_value);
-        break;
-      case MotorBase::Profiled_Torque:
-        motion_controller_driver->set_target(motor_data_[it->first].target.torque_value);
-        break;
-      default:
-        RCLCPP_INFO(kLogger, "Mode %u not supported", mode);
+      const uint16_t& mode = motion_controller_driver->get_mode(motor.first);
+      switch (mode)
+      {
+        case MotorBase::No_Mode:
+          break;
+        case MotorBase::Profiled_Position:
+        case MotorBase::Cyclic_Synchronous_Position:
+        case MotorBase::Interpolated_Position:
+          motion_controller_driver->set_target(motor.first, motor_data_[motor.second->getJointName()].target_position);
+          break;
+        case MotorBase::Profiled_Velocity:
+        case MotorBase::Velocity:
+        case MotorBase::Cyclic_Synchronous_Velocity:
+          motion_controller_driver->set_target(motor.first, motor_data_[motor.second->getJointName()].target_velocity);
+          break;
+        case MotorBase::Profiled_Torque:
+        case MotorBase::Cyclic_Synchronous_Torque:
+          motion_controller_driver->set_target(motor.first, motor_data_[motor.second->getJointName()].target_torque);
+          break;
+        default:
+          RCLCPP_INFO(kLogger, "Mode %u not supported", mode);
+      }
     }
   }
 
   return hardware_interface::return_type::OK;
 }
-
-void Cia402System::switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver)
-{
-  if (motor_data_[id].position_mode.is_commanded())
-  {
-    motor_data_[id].position_mode.set_response(driver->set_mode_position());
-  }
-
-  if (motor_data_[id].cyclic_position_mode.is_commanded())
-  {
-    motor_data_[id].cyclic_position_mode.set_response(driver->set_mode_cyclic_position());
-  }
-
-  if (motor_data_[id].velocity_mode.is_commanded())
-  {
-    motor_data_[id].velocity_mode.set_response(driver->set_mode_velocity());
-  }
-
-  if (motor_data_[id].cyclic_velocity_mode.is_commanded())
-  {
-    motor_data_[id].cyclic_velocity_mode.set_response(driver->set_mode_cyclic_velocity());
-  }
-
-  if (motor_data_[id].torque_mode.is_commanded())
-  {
-    motor_data_[id].torque_mode.set_response(driver->set_mode_torque());
-  }
-
-  if (motor_data_[id].interpolated_position_mode.is_commanded())
-  {
-    motor_data_[id].interpolated_position_mode.set_response(
-      driver->set_mode_interpolated_position());
-  }
-}
-
-void Cia402System::handleInit(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver)
-{
-  if (motor_data_[id].init.is_commanded())
-  {
-    motor_data_[id].init.set_response(driver->init_motor());
-  }
-}
-
-void Cia402System::handleRecover(
-  uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver)
-{
-  if (motor_data_[id].recover.is_commanded())
-  {
-    motor_data_[id].recover.set_response(driver->recover_motor());
-  }
-}
-
-void Cia402System::handleHalt(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver)
-{
-  if (motor_data_[id].halt.is_commanded())
-  {
-    motor_data_[id].halt.set_response(driver->halt_motor());
-  }
-}
-
 }  // namespace canopen_ros2_control
 
 #include "pluginlib/class_list_macros.hpp"

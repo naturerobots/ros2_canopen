@@ -1,3 +1,4 @@
+//    Copyright 2024 Malte kleine Piening, Nature Robots GmbH
 //    Copyright 2023 Christoph Hellmann Santos
 //                          Vishnuprasad Prachandabhanu
 //                          Lovro Ivanov
@@ -173,6 +174,18 @@ public:
    * @param [out] bool
    */
   bool set_operation_mode(uint8_t channel, uint16_t mode);
+
+  /**
+   * @brief Method to set default mode
+   *
+   * Calls Motor402::enterModeAndWait with default Mode as
+   * Target Operation Mode. If successful, the motor was transitioned
+   * to default Mode.
+   *
+   * @param [in] void
+   * @param [out] bool
+   */
+  bool set_default_operation_mode(uint8_t channel);
 
   /**
    * @brief Service Callback to set desired mode

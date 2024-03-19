@@ -87,13 +87,14 @@ class Motor402 : public MotorBase
 public:
   Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
            std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
-           double scale_vel_from_dev, uint8_t channel)
+           double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel)
     : MotorBase()
     , joint_name_(joint_name)
     , scale_pos_to_dev_(scale_pos_to_dev)
     , scale_pos_from_dev_(scale_pos_from_dev)
     , scale_vel_to_dev_(scale_vel_to_dev)
     , scale_vel_from_dev_(scale_vel_from_dev)
+    , default_operation_mode_(default_operation_mode)
     , channel_(channel)
     , switching_state_(switching_state)
     , monitor_mode_(true)
@@ -111,6 +112,11 @@ public:
   const std::string& getJointName() const
   {
     return joint_name_;
+  }
+
+  uint16_t getDefaultOperationMode() const
+  {
+    return default_operation_mode_;
   }
 
   void setDriver(std::shared_ptr<LelyDriverBridge> driver)
@@ -288,6 +294,9 @@ private:
   double scale_pos_from_dev_;
   double scale_vel_to_dev_;
   double scale_vel_from_dev_;
+
+  // default operation mode to set
+  uint16_t default_operation_mode_;
 
   // channel
   uint8_t channel_ = 1;

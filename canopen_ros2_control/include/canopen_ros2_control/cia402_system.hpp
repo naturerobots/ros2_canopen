@@ -1,3 +1,4 @@
+// Copyright (c) 2024, Malte kleine Piening, Nature Robots GmbH
 // Copyright (c) 2022, StoglRobotics
 // Copyright (c) 2022, Stogl Robotics Consulting UG (haftungsbeschränkt) (template)
 //
@@ -34,49 +35,19 @@ constexpr double kResponseFail = 0.0;
 namespace canopen_ros2_control
 {
 
-struct MotorTriggerCommand
-{
-  double ons_cmd{std::numeric_limits<double>::quiet_NaN()};
-  double resp{std::numeric_limits<double>::quiet_NaN()};
-
-  bool is_commanded()
-  {
-    bool tmp = !std::isnan(ons_cmd);
-    ons_cmd = std::numeric_limits<double>::quiet_NaN();
-    return tmp;
-  }
-
-  void set_response(bool response) { resp = response ? kResponseOk : kResponseFail; }
-};
-
-struct MotorTarget : public MotorTriggerCommand
-{
-  double position_value;
-  double velocity_value;
-  double torque_value;
-};
-
 struct MotorNodeData
 {
   // feedback
   double actual_position;
   double actual_speed;
 
-  // basic control
-  MotorTriggerCommand init;
-  MotorTriggerCommand halt;
-  MotorTriggerCommand recover;
-
   // mode control
-  MotorTriggerCommand position_mode;
-  MotorTriggerCommand velocity_mode;
-  MotorTriggerCommand cyclic_velocity_mode;
-  MotorTriggerCommand cyclic_position_mode;
-  MotorTriggerCommand torque_mode;
-  MotorTriggerCommand interpolated_position_mode;
+  uint16_t operation_mode;
 
   // setpoint
-  MotorTarget target;
+  double target_position;
+  double target_velocity;
+  double target_torque;
 };
 
 using namespace ros2_canopen;
@@ -88,10 +59,10 @@ public:
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
   ~Cia402System() = default;
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo & info);
+  hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo& info);
 
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  hardware_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state);
+  hardware_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state);
 
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
   std::vector<hardware_interface::StateInterface> export_state_interfaces();
@@ -100,29 +71,29 @@ public:
   std::vector<hardware_interface::CommandInterface> export_command_interfaces();
 
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state);
+  hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state);
 
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  hardware_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state);
+  hardware_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state);
 
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  hardware_interface::return_type read(const rclcpp::Time & time, const rclcpp::Duration & period);
+  hardware_interface::return_type read(const rclcpp::Time& time, const rclcpp::Duration& period);
 
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  hardware_interface::return_type write(const rclcpp::Time & time, const rclcpp::Duration & period);
+  hardware_interface::return_type write(const rclcpp::Time& time, const rclcpp::Duration& period);
 
 protected:
-  // can stuff
-  std::map<uint, MotorNodeData> motor_data_;
+  // motor data for each registered joint name
+  std::map<std::string, MotorNodeData> motor_data_;
 
 private:
-  void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver);
+  void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
 
-  void handleInit(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver);
+  void handleInit(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
 
-  void handleRecover(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver);
+  void handleRecover(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
 
-  void handleHalt(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver> & driver);
+  void handleHalt(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
 
   void initDeviceContainer();
 };

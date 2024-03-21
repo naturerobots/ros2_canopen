@@ -65,58 +65,58 @@ void NodeCanopen402Driver<rclcpp::Node>::setupRosInterfaces(const std::string& j
       });
 
   handle_halt_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                   std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_halt(request, response, channel);
       });
 
   handle_recover_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                      std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_recover(request, response, channel);
       });
 
   handle_set_mode_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Position);
       });
 
   handle_set_mode_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Velocity);
       });
 
   handle_set_mode_cyclic_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/cyclic_velocity_mode",
+      "~/" + joint_name + "/cyclic_velocity_mode",
       [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                       std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Velocity);
       });
 
   handle_set_mode_cyclic_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/cyclic_position_mode",
+      "~/" + joint_name + "/cyclic_position_mode",
       [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                       std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Position);
       });
 
   handle_set_mode_interpolated_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/interpolated_position_mode",
+      "~/" + joint_name + "/interpolated_position_mode",
       [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                       std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Interpolated_Position);
       });
 
   handle_set_mode_torque_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                          std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Torque);
       });
 
   handle_set_target_service[channel] = this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
-      "~" + joint_name + "/target",
+      "~/" + joint_name + "/target",
       [this, channel](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
                       canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
         this->handle_set_target(request, response, channel);
@@ -137,58 +137,58 @@ void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(c
       });
 
   handle_halt_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                   std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_halt(request, response, channel);
       });
 
   handle_recover_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                      std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_recover(request, response, channel);
       });
 
   handle_set_mode_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Position);
       });
 
   handle_set_mode_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Velocity);
       });
 
   handle_set_mode_cyclic_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/cyclic_velocity_mode",
+      "~/" + joint_name + "/cyclic_velocity_mode",
       [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                       std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Velocity);
       });
 
   handle_set_mode_cyclic_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/cyclic_position_mode",
+      "~/" + joint_name + "/cyclic_position_mode",
       [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                       std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Cyclic_Synchronous_Position);
       });
 
   handle_set_mode_interpolated_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/interpolated_position_mode",
+      "~/" + joint_name + "/interpolated_position_mode",
       [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                       std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Interpolated_Position);
       });
 
   handle_set_mode_torque_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
-      "~" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+      "~/" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
                                                          std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Torque);
       });
 
   handle_set_target_service[channel] = this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
-      "~" + joint_name + "/target",
+      "~/" + joint_name + "/target",
       [this, channel](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
                       canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
         this->handle_set_target(request, response, channel);
@@ -199,6 +199,9 @@ template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::configure(false);
+  
+    RCLCPP_ERROR_STREAM(this->node_->get_logger(),
+                        "CONFIGURE");
 
   // get channels part of configuration. this contains key value pairs as:
   // <channel_id>:
@@ -223,9 +226,9 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
   // iterate over channels
   for (auto it = channels_conf.begin(); it != channels_conf.end(); it++)
   {
-    auto channel_conf = *it;
+    auto channel_conf = it->second;
 
-    uint8_t channel = channels_conf.as<uint8_t>();
+    uint8_t channel = it->first.as<uint8_t>();
     std::optional<std::string> joint_name;
     std::optional<double> scale_pos_to_dev;
     std::optional<double> scale_pos_from_dev;

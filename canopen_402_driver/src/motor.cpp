@@ -447,6 +447,12 @@ bool Motor402::handleInit()
       (it->second)();
     }
   }
+  else
+  {
+    RCLCPP_ERROR_STREAM(rclcpp::get_logger("canopen_402_driver"),
+                        "Init: Illegal channel " << (int)channel_ << " for motor at joint " << joint_name_);
+    return false;
+  }
 
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Read State");
   if (!readState())

@@ -62,6 +62,9 @@ void Cia402System::initDeviceContainer()
   {
     auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
+    // initialize data for each node
+    canopen_data_[it->first] = CanopenNodeData();
+
     auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
       canopen_data_[id].nmt_state.set_state(nmt_state);
     };
@@ -120,12 +123,13 @@ std::vector<hardware_interface::StateInterface> Cia402System::export_state_inter
 
   for (uint i = 0; i < info_.joints.size(); i++)
   {
-    if (info_.joints[i].parameters.find("node_id") == info_.joints[i].parameters.end())
-    {
-      // skip adding motor canopen interfaces
-      continue;
-    }
-    const uint8_t node_id = static_cast<uint8_t>(std::stoi(info_.joints[i].parameters["node_id"]));
+    // if (info_.joints[i].parameters.find("node_id") == info_.joints[i].parameters.end())
+    // {
+    //   // skip adding motor canopen interfaces
+    //   RCLCPP_WARN_STREAM(kLogger, "skipping joint " << i);
+    //   continue;
+    // }
+    // const uint8_t node_id = static_cast<uint8_t>(std::stoi(info_.joints[i].parameters["node_id"]));
 
     // actual position
     state_interfaces.emplace_back(hardware_interface::StateInterface(
@@ -147,13 +151,13 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
 
   for (uint i = 0; i < info_.joints.size(); i++)
   {
-    if (info_.joints[i].parameters.find("node_id") == info_.joints[i].parameters.end())
-    {
-      // skip adding canopen interfaces
-      continue;
-    }
+    // if (info_.joints[i].parameters.find("node_id") == info_.joints[i].parameters.end())
+    // {
+    //   // skip adding canopen interfaces
+    //   continue;
+    // }
 
-    const uint8_t node_id = static_cast<uint8_t>(std::stoi(info_.joints[i].parameters["node_id"]));
+    // const uint8_t node_id = static_cast<uint8_t>(std::stoi(info_.joints[i].parameters["node_id"]));
 
     // target
     command_interfaces.emplace_back(hardware_interface::CommandInterface(
@@ -172,12 +176,13 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
 hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = canopen_data_.begin(); it != canopen_data_.end(); ++it)
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
+      RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel);
       if (!motion_controller_driver->init_motor(motor_channel))
       {
         return hardware_interface::CallbackReturn::ERROR;
@@ -205,9 +210,9 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
 
   auto drivers = device_container_->get_registered_drivers();
 
-  for (auto it = canopen_data_.begin(); it != canopen_data_.end(); ++it)
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
@@ -227,29 +232,29 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
 {
   auto drivers = device_container_->get_registered_drivers();
 
-  for (auto it = canopen_data_.begin(); it != canopen_data_.end(); ++it)
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
     // TODO(livanov93): check casting
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(drivers[it->first]);
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     // do same as in proxy system first - handle nmt, tpdo, rpdo
     // reset node nmt
-    if (it->second.nmt_state.reset_command())
+    if (canopen_data_[it->first].nmt_state.reset_command())
     {
       motion_controller_driver->reset_node_nmt_command();
     }
 
     // start nmt
-    if (it->second.nmt_state.start_command())
+    if (canopen_data_[it->first].nmt_state.start_command())
     {
       motion_controller_driver->start_node_nmt_command();
     }
 
     // tpdo data one shot mechanism
-    if (it->second.tpdo_data.write_command())
+    if (canopen_data_[it->first].tpdo_data.write_command())
     {
-      it->second.tpdo_data.prepare_data();
-      motion_controller_driver->tpdo_transmit(it->second.tpdo_data.original_data);
+      canopen_data_[it->first].tpdo_data.prepare_data();
+      motion_controller_driver->tpdo_transmit(canopen_data_[it->first].tpdo_data.original_data);
     }
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())

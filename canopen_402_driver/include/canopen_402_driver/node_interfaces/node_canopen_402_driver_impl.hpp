@@ -66,25 +66,25 @@ void NodeCanopen402Driver<rclcpp::Node>::setupRosInterfaces(const std::string& j
 
   handle_halt_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                  std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                   std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_halt(request, response, channel);
       });
 
   handle_recover_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                     std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                      std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_recover(request, response, channel);
       });
 
   handle_set_mode_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Position);
       });
 
   handle_set_mode_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Velocity);
       });
 
@@ -111,7 +111,7 @@ void NodeCanopen402Driver<rclcpp::Node>::setupRosInterfaces(const std::string& j
 
   handle_set_mode_torque_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                         std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                          std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Torque);
       });
 
@@ -138,25 +138,25 @@ void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(c
 
   handle_halt_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/halt", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                  std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                   std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_halt(request, response, channel);
       });
 
   handle_recover_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/recover", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                     std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                      std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_recover(request, response, channel);
       });
 
   handle_set_mode_position_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/position_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Position);
       });
 
   handle_set_mode_velocity_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/velocity_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                           std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                            std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Velocity);
       });
 
@@ -183,7 +183,7 @@ void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(c
 
   handle_set_mode_torque_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
       "~/" + joint_name + "/torque_mode", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
-                                                         std_srvs::srv::Trigger::Response::SharedPtr response) {
+                                                          std_srvs::srv::Trigger::Response::SharedPtr response) {
         this->handle_set_operation_mode(request, response, channel, MotorBase::Profiled_Torque);
       });
 
@@ -199,9 +199,8 @@ template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::configure(false);
-  
-    RCLCPP_ERROR_STREAM(this->node_->get_logger(),
-                        "CONFIGURE");
+
+  RCLCPP_ERROR_STREAM(this->node_->get_logger(), "CONFIGURE");
 
   // get channels part of configuration. this contains key value pairs as:
   // <channel_id>:
@@ -361,6 +360,7 @@ void NodeCanopen402Driver<NODETYPE>::add_to_master()
   NodeCanopenProxyDriver<NODETYPE>::add_to_master();
   for (const auto& motor : motors_)
   {
+    RCLCPP_INFO_STREAM(this->node_->get_logger(), "setting driver for motor");
     motor.second->setDriver(this->lely_driver_);
   }
 }

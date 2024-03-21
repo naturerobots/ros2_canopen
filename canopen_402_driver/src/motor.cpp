@@ -271,6 +271,11 @@ bool Motor402::switchState(const State402::InternalState& target)
 
 bool Motor402::readState()
 {
+  if (this->driver == nullptr || this->control_word_entry_index == 0)
+  {
+    return false;
+  }
+
   uint16_t old_sw,
       sw = driver->universal_get_value<uint16_t>(status_word_entry_index, 0x0);  // TODO: added error handling
   old_sw = status_word_.exchange(sw);
@@ -318,6 +323,11 @@ void Motor402::handleRead()
 }
 void Motor402::handleWrite()
 {
+  if (this->driver == nullptr || this->control_word_entry_index == 0)
+  {
+    return;
+  }
+
   std::scoped_lock lock(cw_mutex_);
   control_word_ |= (1 << Command402::CW_Halt);
   if (state_handler_.getState() == State402::Operation_Enable)

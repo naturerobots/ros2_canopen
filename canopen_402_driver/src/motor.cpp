@@ -271,7 +271,7 @@ bool Motor402::switchState(const State402::InternalState& target)
 
 bool Motor402::readState()
 {
-  if (this->driver == nullptr || this->control_word_entry_index == 0)
+  if (this->driver == nullptr || this->status_word_entry_index == 0 || op_mode_display_index == 0)
   {
     return false;
   }
@@ -422,6 +422,8 @@ bool Motor402::handleInit()
     op_mode_index = 0x6060;
     op_mode_display_index = 0x6061;
     supported_drive_modes_index = 0x6502;
+    speed_feedback_index = 0x606C;
+    position_feedback_index = 0x6064;
 
     for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators1_.begin();
          it != mode_allocators1_.end(); ++it)
@@ -436,6 +438,8 @@ bool Motor402::handleInit()
     op_mode_index = 0x6860;
     op_mode_display_index = 0x6861;
     supported_drive_modes_index = 0x6D02;
+    speed_feedback_index = 0x686C;
+    position_feedback_index = 0x6864;
 
     for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators2_.begin();
          it != mode_allocators2_.end(); ++it)
@@ -450,6 +454,8 @@ bool Motor402::handleInit()
     op_mode_index = 0x7060;
     op_mode_display_index = 0x7061;
     supported_drive_modes_index = 0x7502;
+    speed_feedback_index = 0x706C;
+    position_feedback_index = 0x7064;
 
     for (std::unordered_map<uint16_t, AllocFuncType>::iterator it = mode_allocators3_.begin();
          it != mode_allocators3_.end(); ++it)

@@ -782,10 +782,11 @@ public:
     }
     if (!is_tpdo)
     {
-      if (sync_sdo_read_typed<T>(index, subindex, value, std::chrono::milliseconds(20)))
+      if (!sync_sdo_read_typed<T>(index, subindex, value, std::chrono::milliseconds(20)))
       {
-        return value;
+        RCLCPP_ERROR_STREAM(rclcpp::get_logger("lely_driver_bridge"), "Unable to read SDO index: " << (int) index << " subindex: " << (int) subindex);
       }
+      return value;
     }
 
     std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);

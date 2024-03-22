@@ -65,6 +65,9 @@ void Cia402System::initDeviceContainer()
     // initialize data for each node
     canopen_data_[it->first] = CanopenNodeData();
 
+    // initialize data for each node
+    canopen_data_[it->first] = CanopenNodeData();
+
     auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
       canopen_data_[id].nmt_state.set_state(nmt_state);
     };

@@ -266,11 +266,19 @@ public:
 
   double get_speed() const
   {
-    return (double)this->driver->universal_get_value<int32_t>(0x606C, 0) * scale_vel_from_dev_;
+    if (speed_feedback_index == 0)
+    {
+      return 0.0;
+    }
+    return (double)this->driver->universal_get_value<int32_t>(speed_feedback_index, 0) * scale_vel_from_dev_;
   }
   double get_position() const
   {
-    return (double)this->driver->universal_get_value<int32_t>(0x6064, 0) * scale_pos_from_dev_;
+    if (position_feedback_index == 0)
+    {
+      return 0.0;
+    }
+    return (double)this->driver->universal_get_value<int32_t>(position_feedback_index, 0) * scale_pos_from_dev_;
   }
 
   void set_diagnostic_status_msgs(std::shared_ptr<DiagnosticsCollector> status, bool enable)
@@ -324,11 +332,13 @@ private:
 
   //  !need to patch, that second channel is supported
   std::shared_ptr<LelyDriverBridge> driver;
-  uint16_t status_word_entry_index;
-  uint16_t control_word_entry_index;
-  uint16_t op_mode_display_index;
-  uint16_t op_mode_index;
-  uint16_t supported_drive_modes_index;
+  uint16_t status_word_entry_index = 0;
+  uint16_t control_word_entry_index = 0;
+  uint16_t op_mode_display_index = 0;
+  uint16_t op_mode_index = 0;
+  uint16_t supported_drive_modes_index = 0;
+  uint16_t speed_feedback_index = 0;
+  uint16_t position_feedback_index = 0;
 
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;

@@ -202,6 +202,21 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
 hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+    {
+      if (!motion_controller_driver->halt_motor(motor_channel))
+      {
+        RCLCPP_ERROR_STREAM(kLogger, "Failed to deactivate motor for joint "
+                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+        return CallbackReturn::FAILURE;
+      }
+    }
+  }
   return CanopenSystem::on_deactivate(previous_state);
 }
 

@@ -501,7 +501,11 @@ void NodeCanopen402Driver<NODETYPE>::diagnostic_callback(diagnostic_updater::Dia
     stat.add(motor.second->getJointName() + "_nmt_state", this->diagnostic_collector_->getValue("NMT"));
     stat.add(motor.second->getJointName() + "_emcy_state", this->diagnostic_collector_->getValue("EMCY"));
     stat.add(motor.second->getJointName() + "_cia402_mode", this->diagnostic_collector_->getValue("cia402_mode"));
+    stat.add(motor.second->getJointName() + "_cia402_set_mode", this->diagnostic_collector_->getValue("cia402_set_"
+                                                                                                      "mode"));
     stat.add(motor.second->getJointName() + "_cia402_state", this->diagnostic_collector_->getValue("cia402_state"));
+    stat.add(motor.second->getJointName() + "_cia402_set_state", this->diagnostic_collector_->getValue("cia402_set_"
+                                                                                                       "state"));
   }
 }
 

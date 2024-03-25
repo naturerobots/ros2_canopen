@@ -492,21 +492,34 @@ bool NodeCanopen402Driver<NODETYPE>::set_target(uint8_t channel, double target)
 template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::diagnostic_callback(diagnostic_updater::DiagnosticStatusWrapper& stat)
 {
+  unsigned char summary_level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+  std::string summary_msg = "";
+
   for (const auto& motor : motors_)
   {
     motor.second->handleDiag();
 
-    stat.summary(this->diagnostic_collector_->getLevel(), this->diagnostic_collector_->getMessage());
+    if (this->diagnostic_collector_->getLevel() >= summary_level)
+    {
+      summary_level = this->diagnostic_collector_->getLevel();
+      summary_msg = motor.second->getJointName() + ": " + this->diagnostic_collector_->getMessage();
+    }
+
     stat.add(motor.second->getJointName() + "_device_state", this->diagnostic_collector_->getValue("DEVICE"));
     stat.add(motor.second->getJointName() + "_nmt_state", this->diagnostic_collector_->getValue("NMT"));
     stat.add(motor.second->getJointName() + "_emcy_state", this->diagnostic_collector_->getValue("EMCY"));
-    stat.add(motor.second->getJointName() + "_cia402_mode", this->diagnostic_collector_->getValue("cia402_mode"));
-    stat.add(motor.second->getJointName() + "_cia402_set_mode", this->diagnostic_collector_->getValue("cia402_set_"
-                                                                                                      "mode"));
-    stat.add(motor.second->getJointName() + "_cia402_state", this->diagnostic_collector_->getValue("cia402_state"));
-    stat.add(motor.second->getJointName() + "_cia402_set_state", this->diagnostic_collector_->getValue("cia402_set_"
-                                                                                                       "state"));
+    stat.add(motor.second->getJointName() + "_cia402_mode",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_mode"));
+    stat.add(motor.second->getJointName() + "_cia402_set_mode",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_"
+                                                                                  "mode"));
+    stat.add(motor.second->getJointName() + "_cia402_state",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_state"));
+    stat.add(motor.second->getJointName() + "_cia402_set_state",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_"
+                                                                                  "state"));
   }
+  stat.summary(summary_level, summary_msg);
 }
 
 #endif

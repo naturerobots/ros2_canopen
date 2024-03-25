@@ -152,7 +152,7 @@ bool Motor402::switchMode(uint16_t mode)
     }
     if (enable_diagnostics_.load())
     {
-      this->diag_collector_->addf("cia402_set_mode", "No mode selected: %d", mode);
+      this->diag_collector_->addf(joint_name_ + "_cia402_set_mode", "No mode selected: %d", mode);
     }
     return true;
   }
@@ -224,7 +224,7 @@ bool Motor402::switchMode(uint16_t mode)
       driver->universal_set_value<int8_t>(op_mode_index, 0x0, mode_id_);
       if (enable_diagnostics_.load())
       {
-        this->diag_collector_->addf("cia402_set_mode", "Mode switch timed out: %d", mode);
+        this->diag_collector_->addf(joint_name_ + "_cia402_set_mode", "Mode switch timed out: %d", mode);
       }
     }
   }
@@ -252,7 +252,7 @@ bool Motor402::switchState(const State402::InternalState& target)
     }
     else if (enable_diagnostics_.load() && success)
     {
-      this->diag_collector_->addf("cia402_set_state", "State switched to: %d", next);
+      this->diag_collector_->addf(joint_name_ + "_cia402_set_state", "State switched to: %d", next);
     }
     lock.unlock();
     if (state != next && !state_handler_.waitForNewState(abstime, state))
@@ -260,7 +260,8 @@ bool Motor402::switchState(const State402::InternalState& target)
       RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "State Transition timed out.");
       if (enable_diagnostics_.load())
       {
-        this->diag_collector_->addf("cia402_set_state", "State transition timed out: %d -> %d", state, next);
+        this->diag_collector_->addf(joint_name_ + "_cia402_set_state", "State transition timed out: %d -> %d", state,
+                                    next);
       }
       return false;
     }
@@ -365,56 +366,56 @@ void Motor402::handleDiag()
   uint16_t sw = status_word_;
   State402::InternalState state = state_handler_.getState();
   uint16_t mode = getMode();
-  this->diag_collector_->addf("cia402_mode", "%i", mode);
+  this->diag_collector_->addf(joint_name_ + "_cia402_mode", "%i", mode);
 
   switch (state)
   {
     case State402::Not_Ready_To_Switch_On:
-      this->diag_collector_->addf("cia402_state", "Not ready to switch on");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Not ready to switch on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Not ready to switch on");
       break;
     case State402::Switch_On_Disabled:
-      this->diag_collector_->addf("cia402_state", "Switch on disabled");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switch on disabled");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Switch on disabled");
       break;
     case State402::Ready_To_Switch_On:
-      this->diag_collector_->addf("cia402_state", "Ready to switch on");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Ready to switch on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Ready to switch on");
       break;
     case State402::Switched_On:
-      this->diag_collector_->addf("cia402_state", "Switched on");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switched on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Switched on");
       break;
     case State402::Operation_Enable:
-      this->diag_collector_->addf("cia402_state", "Operation enabled");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Operation enabled");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Operation enabled");
       break;
     case State402::Quick_Stop_Active:
-      this->diag_collector_->addf("cia402_state", "Quick stop active");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Quick stop active");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Quick stop active");
       break;
     case State402::Fault:
-      this->diag_collector_->addf("cia402_state", "Fault");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Fault");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Fault");
       break;
     case State402::Fault_Reaction_Active:
-      this->diag_collector_->addf("cia402_state", "Fault reaction active");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Fault reaction active");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Fault reaction active");
       break;
     case State402::Unknown:
-      this->diag_collector_->addf("cia402_state", "Unknown state");
+      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Unknown state");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Unknown state");
       break;
   }
 
   if (sw & (1 << State402::SW_Warning))
   {
-    // std::cout << "Warning bit is set" << std::endl;
+    this->diag_collector_->addf(joint_name_ + "_cia402_state", "Warning bit is set");
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Warning bit is set");
   }
   if (sw & (1 << State402::SW_Internal_limit))
   {
-    // std::cout << "Internal limit active" << std::endl;
+    this->diag_collector_->addf(joint_name_ + "_cia402_state", "Internal limit active");
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Internal limit active");
   }
 }

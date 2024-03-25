@@ -304,6 +304,9 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         default:
           RCLCPP_INFO(kLogger, "Mode %u not supported", mode);
       }
+
+      // auto recover from fault
+      motion_controller_driver->recover_motor_on_fault(motor_channel);
     }
   }
 

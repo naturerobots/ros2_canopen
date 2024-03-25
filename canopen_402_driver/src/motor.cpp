@@ -578,3 +578,13 @@ bool Motor402::handleRecover()
   }
   return true;
 }
+
+bool Motor402::handleRecoverOnFault()
+{
+  State402::InternalState state = state_handler_.getState();
+  if (state == State402::Fault)
+  {
+    return handleRecover();
+  }
+  return true;
+}

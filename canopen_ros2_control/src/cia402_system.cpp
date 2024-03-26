@@ -259,13 +259,48 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
   return ret_val;
 }
 
+void Cia402System::stop_all_motors()
+{
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+    {
+      motion_controller_driver->set_target(motor_channel, 0);
+    }
+  }
+}
+
 hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
   auto drivers = device_container_->get_registered_drivers();
 
+  // check all motors if at least one is faulty
+  bool faulty = false;
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
-    // TODO(livanov93): check casting
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+    {
+      if (motion_controller_driver->is_motor_faulty(motor_channel))
+      {
+        // instantly stop all motors and recover faulty motor
+        stop_all_motors();
+        motion_controller_driver->recover_motor(motor_channel);
+        faulty = true;
+      }
+    }
+  }
+
+  // at least one motor is faulty
+  if (faulty)
+  {
+    return hardware_interface::return_type::ERROR;
+  }
+
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     // do same as in proxy system first - handle nmt, tpdo, rpdo
@@ -317,9 +352,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         default:
           RCLCPP_INFO(kLogger, "Mode %u not supported", mode);
       }
-
-      // auto recover from fault
-      motion_controller_driver->recover_motor_on_fault(motor_channel);
     }
   }
 

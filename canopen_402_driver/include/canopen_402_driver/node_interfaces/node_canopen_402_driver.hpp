@@ -69,9 +69,9 @@ public:
   virtual void deactivate(bool called_from_base) override;
   virtual void add_to_master() override;
 
-  virtual bool recover_motor_on_fault(uint8_t channel)
+  virtual bool is_motor_faulty(uint8_t channel)
   {
-    return motors_[channel]->handleRecoverOnFault();
+    return motors_[channel]->isFaulty();
   }
 
   virtual double get_speed(uint8_t channel)

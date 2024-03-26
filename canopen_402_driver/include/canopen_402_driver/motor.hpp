@@ -184,13 +184,10 @@ public:
   bool handleRecover();
 
   /**
-   * @brief Checks if there is a Fault and Recovers the device from fault
-   *
-   * This function tries to reset faults and
-   * put the device back to operational state.
+   * @brief Checks if there is a Fault
    *
    */
-  bool handleRecoverOnFault();
+  bool isFaulty();
 
   /**
    * @brief Register a new operation mode for the drive

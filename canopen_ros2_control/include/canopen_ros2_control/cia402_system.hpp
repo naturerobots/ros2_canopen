@@ -83,6 +83,8 @@ protected:
   // motor data for each registered joint name
   std::map<std::string, MotorNodeData> motor_data_;
 
+  void stop_all_motors();
+
 private:
   void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
 

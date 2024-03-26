@@ -483,11 +483,11 @@ bool Motor402::handleInit()
     std::cout << "Could not read motor state" << std::endl;
     return false;
   }
-  {
-    std::scoped_lock lock(cw_mutex_);
-    control_word_ = 0;
-    start_fault_reset_ = true;
-  }
+  // {
+  //   std::scoped_lock lock(cw_mutex_);
+  //   control_word_ = 0;
+  //   start_fault_reset_ = true;
+  // }
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
   if (!switchState(State402::Operation_Enable))
   {
@@ -580,12 +580,12 @@ bool Motor402::handleRecover()
   return true;
 }
 
-bool Motor402::handleRecoverOnFault()
+bool Motor402::isFaulty()
 {
   State402::InternalState state = state_handler_.getState();
   if (state == State402::Fault || state == State402::Switch_On_Disabled)
   {
-    return handleRecover();
+    return true;
   }
-  return true;
+  return false;
 }

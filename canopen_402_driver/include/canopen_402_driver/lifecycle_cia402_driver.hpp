@@ -95,9 +95,9 @@ public:
     return node_canopen_402_driver_->recover_motor(channel);
   }
 
-  bool recover_motor_on_fault(uint8_t channel)
+  bool is_motor_faulty(uint8_t channel)
   {
-    return node_canopen_402_driver_->recover_motor_on_fault(channel);
+    return node_canopen_402_driver_->is_motor_faulty(channel);
   }
 
   bool halt_motor(uint8_t channel)

@@ -98,7 +98,8 @@ public:
     , channel_(channel)
     , switching_state_(switching_state)
     , monitor_mode_(true)
-    , state_switch_timeout_(5)
+    , state_switch_timeout_(1)
+    , initialized_(false)
   {
     this->driver = driver;
   }
@@ -348,6 +349,9 @@ private:
   uint16_t supported_drive_modes_index = 0;
   uint16_t speed_feedback_index = 0;
   uint16_t position_feedback_index = 0;
+
+  // whill switch to true when initialization procedure has finished
+  bool initialized_ = false;
 
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;

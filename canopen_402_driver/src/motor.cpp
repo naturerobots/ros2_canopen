@@ -323,7 +323,7 @@ void Motor402::handleRead()
 }
 void Motor402::handleWrite()
 {
-  if (this->driver == nullptr || this->control_word_entry_index == 0)
+  if (!this->initialized_)
   {
     return;
   }
@@ -529,6 +529,7 @@ bool Motor402::handleInit()
     return false;
   }
 
+  initialized_ = true;
   return true;
 }
 bool Motor402::handleShutdown()
@@ -582,7 +583,7 @@ bool Motor402::handleRecover()
 bool Motor402::handleRecoverOnFault()
 {
   State402::InternalState state = state_handler_.getState();
-  if (state == State402::Fault)
+  if (state == State402::Fault || state == State402::Switch_On_Disabled)
   {
     return handleRecover();
   }

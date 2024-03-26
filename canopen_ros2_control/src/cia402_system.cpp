@@ -296,7 +296,7 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
   // at least one motor is faulty
   if (faulty)
   {
-    return hardware_interface::return_type::ERROR;
+    return hardware_interface::return_type::OK;
   }
 
   for (auto it = drivers.begin(); it != drivers.end(); ++it)

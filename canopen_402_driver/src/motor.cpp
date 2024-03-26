@@ -583,7 +583,7 @@ bool Motor402::handleRecover()
 bool Motor402::isFaulty()
 {
   State402::InternalState state = state_handler_.getState();
-  if (state == State402::Fault || state == State402::Switch_On_Disabled)
+  if (state != State402::Operation_Enable)
   {
     return true;
   }

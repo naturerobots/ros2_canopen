@@ -178,6 +178,8 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
 
 hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
+  hardware_interface::CallbackReturn return_value = hardware_interface::CallbackReturn::SUCCESS;
+
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -185,19 +187,30 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
-      RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel);
+      RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                                << motion_controller_driver->get_motor_joint_name(motor_channel));
       if (!motion_controller_driver->init_motor(motor_channel))
       {
-        return hardware_interface::CallbackReturn::ERROR;
+        RCLCPP_ERROR_STREAM(kLogger, "Failed to init motor "
+                                         << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+        return_value = hardware_interface::CallbackReturn::ERROR;
       }
 
+      RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
+                                      << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                      << motion_controller_driver->get_motor_joint_name(motor_channel));
       if (!motion_controller_driver->set_default_operation_mode(motor_channel))
       {
-        return hardware_interface::CallbackReturn::ERROR;
+        RCLCPP_ERROR_STREAM(kLogger, "Failed to set operation mode for motor "
+                                         << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+        return_value = hardware_interface::CallbackReturn::ERROR;
       }
     }
   }
-  return CanopenSystem::on_activate(previous_state);
+  hardware_interface::CallbackReturn super_return_value = CanopenSystem::on_activate(previous_state);
+  return super_return_value == hardware_interface::CallbackReturn::SUCCESS ? return_value : super_return_value;
 }
 
 hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)

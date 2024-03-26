@@ -323,7 +323,7 @@ void Motor402::handleRead()
 }
 void Motor402::handleWrite()
 {
-  if (!this->initialized_)
+  if (this->driver == nullptr || this->control_word_entry_index == 0)
   {
     return;
   }

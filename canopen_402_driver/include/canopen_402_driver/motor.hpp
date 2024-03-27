@@ -100,6 +100,7 @@ public:
     , monitor_mode_(true)
     , state_switch_timeout_(1)
     , initialized_(false)
+    , has_communication_failure_(false)
   {
     this->driver = driver;
   }
@@ -188,6 +189,26 @@ public:
    *
    */
   bool isFaulty();
+
+  /**
+   * @brief Checks if there has been a communication failure recently.
+   *
+   * Will return true if communication failed, and false if everything is ok
+   *
+   */
+  bool hasCommunicationFailure();
+
+  /**
+   * @brief Returns whether the motor is initialized
+   *
+   */
+  bool isInitialized();
+
+  /**
+   * @brief Returns if the motor is initialized
+   *
+   */
+  bool isHalted();
 
   /**
    * @brief Register a new operation mode for the drive
@@ -349,6 +370,7 @@ private:
 
   // whill switch to true when initialization procedure has finished
   bool initialized_ = false;
+  bool has_communication_failure_ = false;
 
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;

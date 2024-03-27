@@ -511,13 +511,17 @@ void NodeCanopen402Driver<NODETYPE>::diagnostic_callback(diagnostic_updater::Dia
     stat.add(motor.second->getJointName() + "_cia402_mode",
              this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_mode"));
     stat.add(motor.second->getJointName() + "_cia402_set_mode",
-             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_"
-                                                                                  "mode"));
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_mode"));
     stat.add(motor.second->getJointName() + "_cia402_state",
              this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_state"));
     stat.add(motor.second->getJointName() + "_cia402_set_state",
-             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_"
-                                                                                  "state"));
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
+    stat.add(motor.second->getJointName() + "_cia402_set_state",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
+    stat.add(motor.second->getJointName() + "_cia402_is_initialized",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_is_initialized"));
+    stat.add(motor.second->getJointName() + "_cia402_has_communication_failure",
+             this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_has_communication_failure"));
   }
   stat.summary(summary_level, summary_msg);
 }

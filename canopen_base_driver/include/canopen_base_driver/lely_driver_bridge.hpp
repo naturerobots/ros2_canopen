@@ -58,7 +58,9 @@ typedef std::map<uint16_t, std::map<uint8_t, pdo_mapping>> PDOMap;
 class DriverDictionary : public lely::CODev
 {
 public:
-  DriverDictionary(std::string eds_file) : lely::CODev(eds_file.c_str()) {}
+  DriverDictionary(std::string eds_file) : lely::CODev(eds_file.c_str())
+  {
+  }
   ~DriverDictionary()
   {
     // lely::CODev::~CODev();
@@ -133,8 +135,8 @@ public:
         mapping.is_rpdo = true;
         mapping.is_tpdo = false;
         (*map)[tmpi][tmps] = mapping;
-        std::cout << "Found rpdo mapped object: index=" << std::hex << (int)tmpi
-                  << " subindex=" << (int)tmps << std::endl;
+        std::cout << "Found rpdo mapped object: index=" << std::hex << (int)tmpi << " subindex=" << (int)tmps
+                  << std::endl;
       }
     }
   }
@@ -164,8 +166,8 @@ public:
         mapping.is_rpdo = false;
         mapping.is_tpdo = true;
         (*map)[tmpi][tmps] = mapping;
-        std::cout << "Found tpdo mapped object: index=" << std::hex << (int)tmpi
-                  << " subindex=" << (int)tmps << std::endl;
+        std::cout << "Found tpdo mapped object: index=" << std::hex << (int)tmpi << " subindex=" << (int)tmps
+                  << std::endl;
       }
     }
   }
@@ -246,7 +248,7 @@ enum class LelyBridgeErrc
 
 struct LelyBridgeErrCategory : std::error_category
 {
-  const char * name() const noexcept override;
+  const char* name() const noexcept override;
   std::string message(int ev) const override;
 };
 }  // namespace ros2_canopen
@@ -327,7 +329,7 @@ protected:
   //   on_sync_function_ = std::function<void()>();
   // }
 
-  void OnSync(uint8_t cnt, const time_point & t) noexcept override
+  void OnSync(uint8_t cnt, const time_point& t) noexcept override
   {
     if (on_sync_function_ != nullptr)
     {
@@ -361,7 +363,7 @@ protected:
    * @param es
    * @param what
    */
-  virtual void OnBoot(canopen::NmtState st, char es, const ::std::string & what) noexcept override;
+  virtual void OnBoot(canopen::NmtState st, char es, const ::std::string& what) noexcept override;
 
   /**
    * @brief OnRpdoWrite Callback
@@ -398,12 +400,9 @@ public:
    * @param [in] bin      BIN file (concise dcf)
    *
    */
-  LelyDriverBridge(
-    ev_exec_t * exec, canopen::AsyncMaster & master, uint8_t id, std::string name, std::string eds,
-    std::string bin)
-  : FiberDriver(exec, master, id),
-    rpdo_queue(new SafeQueue<COData>()),
-    emcy_queue(new SafeQueue<COEmcy>())
+  LelyDriverBridge(ev_exec_t* exec, canopen::AsyncMaster& master, uint8_t id, std::string name, std::string eds,
+                   std::string bin)
+    : FiberDriver(exec, master, id), rpdo_queue(new SafeQueue<COData>()), emcy_queue(new SafeQueue<COEmcy>())
   {
     nodeid = id;
     running = false;
@@ -412,8 +411,8 @@ public:
     struct stat buffer;
     if (stat(bin.c_str(), &buffer) == 0)
     {
-      co_unsigned16_t * a = NULL;
-      co_unsigned16_t * b = NULL;
+      co_unsigned16_t* a = NULL;
+      co_unsigned16_t* b = NULL;
       dictionary_->readDCF(a, b, bin.c_str());
     }
     pdo_map_ = dictionary_->createPDOMapping();
@@ -445,12 +444,11 @@ public:
     running = true;
 
     auto prom = std::make_shared<std::promise<bool>>();
-    lely::COSub * sub = this->dictionary_->find(idx, subidx);
+    lely::COSub* sub = this->dictionary_->find(idx, subidx);
     if (sub == nullptr)
     {
-      std::cout << "async_sdo_write_typed: id=" << (unsigned int)this->get_id() << " index=0x"
-                << std::hex << (unsigned int)idx << " subindex=" << (unsigned int)subidx
-                << " object does not exist" << std::endl;
+      std::cout << "async_sdo_write_typed: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
+                << (unsigned int)idx << " subindex=" << (unsigned int)subidx << " object does not exist" << std::endl;
       prom->set_value(false);
       this->running = false;
       this->sdo_cond.notify_one();
@@ -458,39 +456,35 @@ public:
     }
 
     this->SubmitWrite(
-      idx, subidx, value,
-      [this, value, prom](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec) mutable
-      {
-        if (ec)
-        {
-          prom->set_exception(
-            lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncDownload"));
-        }
-        else
-        {
-          std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
-          this->dictionary_->setVal<T>(idx, subidx, value);
-          prom->set_value(true);
-        }
-        std::unique_lock<std::mutex> lck(this->sdo_mutex);
-        this->running = false;
-        this->sdo_cond.notify_one();
-      },
-      20ms);
+        idx, subidx, value,
+        [this, value, prom](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec) mutable {
+          if (ec)
+          {
+            prom->set_exception(lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncDownload"));
+          }
+          else
+          {
+            std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
+            this->dictionary_->setVal<T>(idx, subidx, value);
+            prom->set_value(true);
+          }
+          std::unique_lock<std::mutex> lck(this->sdo_mutex);
+          this->running = false;
+          this->sdo_cond.notify_one();
+        },
+        20ms);
     return prom->get_future();
   }
 
   template <typename T>
-  bool sync_sdo_write_typed(
-    uint16_t idx, uint8_t subidx, T value, std::chrono::milliseconds timeout)
+  bool sync_sdo_write_typed(uint16_t idx, uint8_t subidx, T value, std::chrono::milliseconds timeout)
   {
     auto fut = async_sdo_write_typed(idx, subidx, value);
     auto wait_res = fut.wait_for(timeout);
     if (wait_res == std::future_status::timeout)
     {
-      std::cout << "sync_sdo_write_typed: id=" << (unsigned int)this->get_id() << " index=0x"
-                << std::hex << (unsigned int)idx << " subindex=" << (unsigned int)subidx
-                << " timed out." << std::endl;
+      std::cout << "sync_sdo_write_typed: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
+                << (unsigned int)idx << " subindex=" << (unsigned int)subidx << " timed out." << std::endl;
       return false;
     }
     bool res = false;
@@ -498,7 +492,7 @@ public:
     {
       res = fut.get();
     }
-    catch (std::exception & e)
+    catch (std::exception& e)
     {
       RCLCPP_ERROR(rclcpp::get_logger(name_), e.what());
     }
@@ -531,12 +525,11 @@ public:
     running = true;
 
     auto prom = std::make_shared<std::promise<T>>();
-    lely::COSub * sub = this->dictionary_->find(idx, subidx);
+    lely::COSub* sub = this->dictionary_->find(idx, subidx);
     if (sub == nullptr)
     {
-      std::cout << "async_sdo_read: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-                << (unsigned int)idx << " subindex=" << (unsigned int)subidx
-                << " object does not exist" << std::endl;
+      std::cout << "async_sdo_read: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex << (unsigned int)idx
+                << " subindex=" << (unsigned int)subidx << " object does not exist" << std::endl;
       try
       {
         throw lely::canopen::SdoError(this->get_id(), idx, subidx, lely::canopen::SdoErrc::NO_OBJ);
@@ -550,39 +543,35 @@ public:
       return prom->get_future();
     }
     this->SubmitRead<T>(
-      idx, subidx,
-      [this, prom](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec, T value) mutable
-      {
-        if (ec)
-        {
-          prom->set_exception(
-            lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncUpload"));
-        }
-        else
-        {
-          std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
-          this->dictionary_->setVal<T>(idx, subidx, value);
-          prom->set_value(value);
-        }
-        std::unique_lock<std::mutex> lck(this->sdo_mutex);
-        this->running = false;
-        this->sdo_cond.notify_one();
-      },
-      20ms);
+        idx, subidx,
+        [this, prom](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec, T value) mutable {
+          if (ec)
+          {
+            prom->set_exception(lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncUpload"));
+          }
+          else
+          {
+            std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
+            this->dictionary_->setVal<T>(idx, subidx, value);
+            prom->set_value(value);
+          }
+          std::unique_lock<std::mutex> lck(this->sdo_mutex);
+          this->running = false;
+          this->sdo_cond.notify_one();
+        },
+        20ms);
     return prom->get_future();
   }
 
   template <typename T>
-  bool sync_sdo_read_typed(
-    uint16_t idx, uint8_t subidx, T & value, std::chrono::milliseconds timeout)
+  bool sync_sdo_read_typed(uint16_t idx, uint8_t subidx, T& value, std::chrono::milliseconds timeout)
   {
     auto fut = async_sdo_read_typed<T>(idx, subidx);
     auto wait_res = fut.wait_for(timeout);
     if (wait_res == std::future_status::timeout)
     {
-      std::cout << "sync_sdo_read_typed: id=" << (unsigned int)this->get_id() << " index=0x"
-                << std::hex << (unsigned int)idx << " subindex=" << (unsigned int)subidx
-                << " timed out." << std::endl;
+      std::cout << "sync_sdo_read_typed: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
+                << (unsigned int)idx << " subindex=" << (unsigned int)subidx << " timed out." << std::endl;
       return false;
     }
     bool res = false;
@@ -591,7 +580,7 @@ public:
       value = fut.get();
       res = true;
     }
-    catch (std::exception & e)
+    catch (std::exception& e)
     {
       RCLCPP_ERROR(rclcpp::get_logger(name_), e.what());
       res = false;
@@ -691,7 +680,10 @@ public:
     on_sync_function_ = on_sync_function;
   }
 
-  void unset_sync_function() { on_sync_function_ = std::function<void()>(); }
+  void unset_sync_function()
+  {
+    on_sync_function_ = std::function<void()>();
+  }
 
   /**
    * @brief Request master to boot device
@@ -709,7 +701,10 @@ public:
    * @return true
    * @return false
    */
-  bool is_booted() { return booted.load(); }
+  bool is_booted()
+  {
+    return booted.load();
+  }
 
   template <typename T>
   void submit_write(COData data)
@@ -718,52 +713,50 @@ public:
     std::memcpy(&value, &data.data_, sizeof(value));
 
     this->SubmitWrite(
-      data.index_, data.subindex_, value,
-      [this, value](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec) mutable
-      {
-        if (ec)
-        {
-          this->sdo_write_data_promise->set_exception(
-            lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncDownload"));
-        }
-        else
-        {
-          std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
-          this->dictionary_->setVal<T>(idx, subidx, value);
-          this->sdo_write_data_promise->set_value(true);
-        }
-        std::unique_lock<std::mutex> lck(this->sdo_mutex);
-        this->running = false;
-        this->sdo_cond.notify_one();
-      },
-      20ms);
+        data.index_, data.subindex_, value,
+        [this, value](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec) mutable {
+          if (ec)
+          {
+            this->sdo_write_data_promise->set_exception(
+                lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncDownload"));
+          }
+          else
+          {
+            std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
+            this->dictionary_->setVal<T>(idx, subidx, value);
+            this->sdo_write_data_promise->set_value(true);
+          }
+          std::unique_lock<std::mutex> lck(this->sdo_mutex);
+          this->running = false;
+          this->sdo_cond.notify_one();
+        },
+        20ms);
   }
 
   template <typename T>
   void submit_read(COData data)
   {
     this->SubmitRead<T>(
-      data.index_, data.subindex_,
-      [this](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec, T value) mutable
-      {
-        if (ec)
-        {
-          this->sdo_read_data_promise->set_exception(
-            lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncUpload"));
-        }
-        else
-        {
-          std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
-          this->dictionary_->setVal<T>(idx, subidx, value);
-          COData d = {idx, subidx, 0};
-          std::memcpy(&d.data_, &value, sizeof(T));
-          this->sdo_read_data_promise->set_value(d);
-        }
-        std::unique_lock<std::mutex> lck(this->sdo_mutex);
-        this->running = false;
-        this->sdo_cond.notify_one();
-      },
-      20ms);
+        data.index_, data.subindex_,
+        [this](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec, T value) mutable {
+          if (ec)
+          {
+            this->sdo_read_data_promise->set_exception(
+                lely::canopen::make_sdo_exception_ptr(id, idx, subidx, ec, "AsyncUpload"));
+          }
+          else
+          {
+            std::scoped_lock<std::mutex> lck(this->dictionary_mutex_);
+            this->dictionary_->setVal<T>(idx, subidx, value);
+            COData d = { idx, subidx, 0 };
+            std::memcpy(&d.data_, &value, sizeof(T));
+            this->sdo_read_data_promise->set_value(d);
+          }
+          std::unique_lock<std::mutex> lck(this->sdo_mutex);
+          this->running = false;
+          this->sdo_cond.notify_one();
+        },
+        20ms);
   }
 
   template <typename T>
@@ -784,7 +777,7 @@ public:
     {
       if (!sync_sdo_read_typed<T>(index, subindex, value, std::chrono::milliseconds(20)))
       {
-        RCLCPP_ERROR_STREAM(rclcpp::get_logger("lely_driver_bridge"), "Unable to read SDO index: " << (int) index << " subindex: " << (int) subindex);
+        throw std::runtime_error("Unable to read SDO index");
       }
       return value;
     }

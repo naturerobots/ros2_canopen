@@ -261,6 +261,8 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
 
 void Cia402System::stop_all_motors()
 {
+  RCLCPP_INFO(kLogger, "Stopping all motors ...");
+
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -287,7 +289,7 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
       {
         // instantly stop all motors and recover faulty motor
         stop_all_motors();
-        motion_controller_driver->recover_motor(motor_channel);
+        // motion_controller_driver->recover_motor(motor_channel);
         faulty = true;
       }
     }

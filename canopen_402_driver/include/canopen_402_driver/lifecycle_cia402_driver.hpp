@@ -100,6 +100,21 @@ public:
     return node_canopen_402_driver_->is_motor_faulty(channel);
   }
 
+  bool is_motor_initialized(uint8_t channel)
+  {
+    return node_canopen_402_driver_->is_motor_initialized(channel);
+  }
+
+  bool has_motor_communication_failure(uint8_t channel)
+  {
+    return node_canopen_402_driver_->has_motor_communication_failure(channel);
+  }
+
+  bool is_motor_halted(uint8_t channel)
+  {
+    return node_canopen_402_driver_->is_motor_halted(channel);
+  }
+
   bool halt_motor(uint8_t channel)
   {
     return node_canopen_402_driver_->halt_motor(channel);

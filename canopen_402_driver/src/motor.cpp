@@ -61,20 +61,27 @@ uint16_t Motor402::getMode()
 bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
 {
   uint32_t supported_modes;
-  if (channel == 1)
+  try
   {
-    supported_modes = driver->universal_get_value<uint32_t>(0x6502, 0x0);
+    if (channel == 1)
+    {
+      supported_modes = driver->universal_get_value<uint32_t>(0x6502, 0x0);
+    }
+    else if (channel == 2)
+    {
+      supported_modes = driver->universal_get_value<uint32_t>(0x6D02, 0x0);
+    }
+    else if (channel == 3)
+    {
+      supported_modes = driver->universal_get_value<uint32_t>(0x7502, 0x0);
+    }
+    // communication worked well
+    has_communication_failure_ = false;
   }
-  else if (channel == 2)
+  catch (std::runtime_error& e)
   {
-    supported_modes = driver->universal_get_value<uint32_t>(0x6D02, 0x0);
-  }
-  else if (channel == 3)
-  {
-    supported_modes = driver->universal_get_value<uint32_t>(0x7502, 0x0);
-  }
-  {
-    /* code */
+    // communication was unsuccessful
+    has_communication_failure_ = true;
   }
 
   bool supported = supported_modes & (1 << (mode - 1));
@@ -192,22 +199,31 @@ bool Motor402::switchMode(uint16_t mode)
   {  // wait for switch
     std::unique_lock lock(mode_mutex_);
 
-    std::chrono::steady_clock::time_point abstime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    if (monitor_mode_)
+    try
     {
-      while (mode_id_ != mode && mode_cond_.wait_until(lock, abstime) == std::cv_status::no_timeout)
+      std::chrono::steady_clock::time_point abstime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+      if (monitor_mode_)
       {
+        while (mode_id_ != mode && mode_cond_.wait_until(lock, abstime) == std::cv_status::no_timeout)
+        {
+        }
       }
+      else
+      {
+        while (mode_id_ != mode && std::chrono::steady_clock::now() < abstime)
+        {
+          lock.unlock();                                                    // unlock inside loop
+          driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);  // poll
+          std::this_thread::sleep_for(std::chrono::milliseconds(20));       // wait some time
+          lock.lock();
+        }
+      }
+      has_communication_failure_ = false;
     }
-    else
+    catch (std::runtime_error& e)
     {
-      while (mode_id_ != mode && std::chrono::steady_clock::now() < abstime)
-      {
-        lock.unlock();                                                    // unlock inside loop
-        driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);  // poll
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));       // wait some time
-        lock.lock();
-      }
+      // communication was unsuccessful
+      has_communication_failure_ = true;
     }
 
     if (mode_id_ == mode)
@@ -276,43 +292,43 @@ bool Motor402::readState()
     return false;
   }
 
-  uint16_t old_sw,
-      sw = driver->universal_get_value<uint16_t>(status_word_entry_index, 0x0);  // TODO: added error handling
-  old_sw = status_word_.exchange(sw);
+  try
+  {
+    uint16_t old_sw,
+        sw = driver->universal_get_value<uint16_t>(status_word_entry_index, 0x0);  // TODO: added error handling
+    old_sw = status_word_.exchange(sw);
 
-  state_handler_.read(sw);
+    state_handler_.read(sw);
 
-  std::unique_lock lock(mode_mutex_);
-  uint16_t new_mode;
-  new_mode = driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);
-  // RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode %hhi",new_mode);
+    std::unique_lock lock(mode_mutex_);
+    uint16_t new_mode;
+    new_mode = driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);
+    // RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode %hhi",new_mode);
 
-  if (selected_mode_ && selected_mode_->mode_id_ == new_mode)
-  {
-    if (!selected_mode_->read(sw))
+    if (selected_mode_ && selected_mode_->mode_id_ == new_mode)
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode handler has error.");
+      if (!selected_mode_->read(sw))
+      {
+        RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode handler has error.");
+      }
     }
-  }
-  if (new_mode != mode_id_)
-  {
-    mode_id_ = new_mode;
-    mode_cond_.notify_all();
-  }
-  if (selected_mode_ && selected_mode_->mode_id_ != new_mode)
-  {
-    RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode does not match.");
-  }
-  if (sw & (1 << State402::SW_Internal_limit))
-  {
-    if (old_sw & (1 << State402::SW_Internal_limit))
+    if (new_mode != mode_id_)
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Internal limit active");
+      mode_id_ = new_mode;
+      mode_cond_.notify_all();
     }
-    else
+    if (selected_mode_ && selected_mode_->mode_id_ != new_mode)
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Internal limit active");
+      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode does not match.");
     }
+
+    // communication worked well
+    has_communication_failure_ = false;
+  }
+  catch (std::runtime_error& e)
+  {
+    // communication was unsuccessful
+    has_communication_failure_ = true;
   }
 
   return true;
@@ -373,18 +389,22 @@ void Motor402::handleDiag()
     case State402::Not_Ready_To_Switch_On:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Not ready to switch on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Not ready to switch on");
+      initialized_ = false;
       break;
     case State402::Switch_On_Disabled:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switch on disabled");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Switch on disabled");
+      initialized_ = false;
       break;
     case State402::Ready_To_Switch_On:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Ready to switch on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Ready to switch on");
+      initialized_ = false;
       break;
     case State402::Switched_On:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switched on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Switched on");
+      initialized_ = false;
       break;
     case State402::Operation_Enable:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Operation enabled");
@@ -405,6 +425,7 @@ void Motor402::handleDiag()
     case State402::Unknown:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Unknown state");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Unknown state");
+      initialized_ = false;
       break;
   }
 
@@ -417,6 +438,19 @@ void Motor402::handleDiag()
   {
     this->diag_collector_->addf(joint_name_ + "_cia402_state", "Internal limit active");
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Internal limit active");
+  }
+
+  this->diag_collector_->addf(joint_name_ + "_cia402_is_initialized", "%i", (int)initialized_);
+  this->diag_collector_->addf(joint_name_ + "_cia402_has_communication_failure", "%i", (int)has_communication_failure_);
+
+  if (has_communication_failure_)
+  {
+    this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "A communication failure occurred");
+  }
+
+  if (initialized_)
+  {
+    this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Motor is not initialized");
   }
 }
 
@@ -483,11 +517,11 @@ bool Motor402::handleInit()
     std::cout << "Could not read motor state" << std::endl;
     return false;
   }
-  // {
-  //   std::scoped_lock lock(cw_mutex_);
-  //   control_word_ = 0;
-  //   start_fault_reset_ = true;
-  // }
+  {
+    std::scoped_lock lock(cw_mutex_);
+    control_word_ = 0;
+    start_fault_reset_ = true;
+  }
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
   if (!switchState(State402::Operation_Enable))
   {
@@ -583,7 +617,27 @@ bool Motor402::handleRecover()
 bool Motor402::isFaulty()
 {
   State402::InternalState state = state_handler_.getState();
-  if (state != State402::Operation_Enable)
+  if (state != State402::Operation_Enable && state != State402::Quick_Stop_Active)
+  {
+    return true;
+  }
+  return false;
+}
+
+bool Motor402::hasCommunicationFailure()
+{
+  return has_communication_failure_;
+}
+
+bool Motor402::isInitialized()
+{
+  return initialized_;
+}
+
+bool Motor402::isHalted()
+{
+  State402::InternalState state = state_handler_.getState();
+  if (state == State402::Quick_Stop_Active)
   {
     return true;
   }

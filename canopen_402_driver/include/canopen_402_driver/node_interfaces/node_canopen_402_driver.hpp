@@ -74,6 +74,21 @@ public:
     return motors_[channel]->isFaulty();
   }
 
+  virtual bool is_motor_initialized(uint8_t channel)
+  {
+    return motors_[channel]->isInitialized();
+  }
+
+  virtual bool has_motor_communication_failure(uint8_t channel)
+  {
+    return motors_[channel]->hasCommunicationFailure();
+  }
+
+  virtual bool is_motor_halted(uint8_t channel)
+  {
+    return motors_[channel]->isHalted();
+  }
+
   virtual double get_speed(uint8_t channel)
   {
     return motors_[channel]->get_speed();

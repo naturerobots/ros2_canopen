@@ -288,12 +288,26 @@ void Cia402System::stop_all_motors()
   }
 }
 
-hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
+bool Cia402System::has_motor_communication_failure()
 {
   auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+    {
+      if (motion_controller_driver->has_motor_communication_failure(motor_channel))
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
-  // check all motors if at least one is faulty
-  bool faulty = false;
+bool Cia402System::is_motor_faulty()
+{
+  auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
@@ -301,19 +315,85 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     {
       if (motion_controller_driver->is_motor_faulty(motor_channel))
       {
-        // instantly stop all motors and recover faulty motor
-        stop_all_motors();
-        // motion_controller_driver->recover_motor(motor_channel);
-        faulty = true;
+        return true;
       }
     }
   }
+  return false;
+}
 
-  // at least one motor is faulty
-  if (faulty)
+bool Cia402System::is_motor_uninitialized()
+{
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
+    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+    {
+      if (!motion_controller_driver->is_motor_initialized(motor_channel))
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
+{
+  auto drivers = device_container_->get_registered_drivers();
+
+  // at least one motor cant be reached
+  if (has_motor_communication_failure())
+  {
+    // stop all motors
+    // we cant do anything else right now other than waiting for the motor to be available again
+    stop_all_motors();
+
     return hardware_interface::return_type::OK;
   }
+
+  // at least one motor is faulty
+  if (is_motor_faulty())
+  {
+    // stop all motors
+    stop_all_motors();
+
+    // dont to anything else
+    return hardware_interface::return_type::OK;
+  }
+
+  // at least one motor is faulty
+  if (is_motor_uninitialized())
+  {
+    // stop all motors
+    stop_all_motors();
+
+    // initialize all uninitialized motors
+    for (auto it = drivers.begin(); it != drivers.end(); ++it)
+    {
+      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+      {
+        if (!motion_controller_driver->is_motor_initialized(motor_channel))
+        {
+          RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                                    << motion_controller_driver->get_motor_joint_name(motor_channel));
+          motion_controller_driver->init_motor(motor_channel);
+
+          RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
+                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
+          motion_controller_driver->set_default_operation_mode(motor_channel);
+        }
+      }
+    }
+
+    // dont to anything else
+    return hardware_interface::return_type::OK;
+  }
+
+  // motion_controller_driver->recover_motor(motor_channel);
 
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {

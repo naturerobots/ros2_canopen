@@ -85,6 +85,12 @@ protected:
 
   void stop_all_motors();
 
+  bool has_motor_communication_failure();
+
+  bool is_motor_faulty();
+
+  bool is_motor_uninitialized();
+
 private:
   void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
 

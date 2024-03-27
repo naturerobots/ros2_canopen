@@ -245,6 +245,7 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
   {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
+    bool com_failure = false;
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
       // get position
@@ -253,6 +254,19 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
       // get speed
       motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed =
           motion_controller_driver->get_speed(motor_channel);
+
+      // check for communication failure -> if com fails, motors will return weird position and speed values
+      com_failure |= motion_controller_driver->has_motor_communication_failure(motor_channel);
+    }
+
+    if (com_failure)
+    {
+      // if we got weird position and speed values from the motors, just set the feedbacks to 0
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+      {
+        motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position = 0.0;
+        motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed = 0.0;
+      }
     }
   }
 

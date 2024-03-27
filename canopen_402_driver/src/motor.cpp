@@ -448,7 +448,7 @@ void Motor402::handleDiag()
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "A communication failure occurred");
   }
 
-  if (initialized_)
+  if (!initialized_)
   {
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Motor is not initialized");
   }

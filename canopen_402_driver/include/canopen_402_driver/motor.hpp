@@ -292,21 +292,42 @@ public:
     registerModesChannel3<CyclicSynchronousTorqueMode3>(MotorBase::Cyclic_Synchronous_Torque, driver);
   }
 
-  double get_speed() const
+  double get_speed()
   {
-    if (speed_feedback_index == 0)
+    if (speed_feedback_index != 0)
     {
-      return 0.0;
+      try
+      {
+        double value = this->driver->universal_get_value<int32_t>(speed_feedback_index, 0) * scale_vel_from_dev_;
+        has_communication_failure_ = false;
+        return value;
+      }
+      catch (std::runtime_error& e)
+      {
+        // communication was unsuccessful
+        has_communication_failure_ = true;
+      }
     }
-    return (double)this->driver->universal_get_value<int32_t>(speed_feedback_index, 0) * scale_vel_from_dev_;
+    return 0.0;
   }
-  double get_position() const
+
+  double get_position()
   {
-    if (position_feedback_index == 0)
+    if (position_feedback_index != 0)
     {
-      return 0.0;
+      try
+      {
+        double value = this->driver->universal_get_value<int32_t>(position_feedback_index, 0) * scale_pos_from_dev_;
+        has_communication_failure_ = false;
+        return value;
+      }
+      catch (std::runtime_error& e)
+      {
+        // communication was unsuccessful
+        has_communication_failure_ = true;
+      }
     }
-    return (double)this->driver->universal_get_value<int32_t>(position_feedback_index, 0) * scale_pos_from_dev_;
+    return 0.0;
   }
 
   void set_diagnostic_status_msgs(std::shared_ptr<DiagnosticsCollector> status, bool enable)

@@ -354,16 +354,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
   }
 
   // at least one motor is faulty
-  if (is_motor_faulty())
-  {
-    // stop all motors
-    stop_all_motors();
-
-    // dont to anything else
-    return hardware_interface::return_type::OK;
-  }
-
-  // at least one motor is faulty
   if (is_motor_uninitialized())
   {
     // stop all motors
@@ -388,6 +378,16 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         }
       }
     }
+
+    // dont to anything else
+    return hardware_interface::return_type::OK;
+  }
+
+  // at least one motor is faulty
+  if (is_motor_faulty())
+  {
+    // stop all motors
+    stop_all_motors();
 
     // dont to anything else
     return hardware_interface::return_type::OK;

@@ -140,7 +140,7 @@ public:
 
     node_->declare_parameter("container_name", "");
     node_->declare_parameter("node_id", 0);
-    node_->declare_parameter("non_transmit_timeout", 100);
+    node_->declare_parameter("non_transmit_timeout", 200);
     node_->declare_parameter("config", "");
     this->init(true);
     this->initialised_.store(true);

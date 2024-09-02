@@ -118,7 +118,7 @@ public:
     node_->declare_parameter("master_bin", "");
     node_->declare_parameter("can_interface_name", "vcan0");
     node_->declare_parameter("node_id", 0);
-    node_->declare_parameter("non_transmit_timeout", 100);
+    node_->declare_parameter("non_transmit_timeout", 200);
     node_->declare_parameter("config", "");
     this->init(true);
     this->initialised_.store(true);

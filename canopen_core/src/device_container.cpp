@@ -223,7 +223,7 @@ bool DeviceContainer::load_master()
       params.push_back(rclcpp::Parameter("master_bin", this->dcf_bin_));
       params.push_back(rclcpp::Parameter("can_interface_name", this->can_interface_name_));
       params.push_back(rclcpp::Parameter("node_id", (int)node_id.value()));
-      params.push_back(rclcpp::Parameter("non_transmit_timeout", 100));
+      params.push_back(rclcpp::Parameter("non_transmit_timeout", 200));
       params.push_back(rclcpp::Parameter("config", config_->dump_device(*it)));
 
       if (!this->load_component(
@@ -298,7 +298,7 @@ bool DeviceContainer::load_drivers()
       params.push_back(rclcpp::Parameter("container_name", this->get_fully_qualified_name()));
       params.push_back(rclcpp::Parameter("node_id", (int)node_id.value()));
       params.push_back(rclcpp::Parameter("config", config_->dump_device(*it)));
-      params.push_back(rclcpp::Parameter("non_transmit_timeout", 100));
+      params.push_back(rclcpp::Parameter("non_transmit_timeout", 200));
 
       if (!this->load_component(
             package_name.value(), driver_name.value(), node_id.value(), *it, params))

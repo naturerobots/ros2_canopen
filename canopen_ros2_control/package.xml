@@ -12,6 +12,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>canopen_402_driver</depend>
+  <depend>canopen_pre_mapped_driver</depend>
   <depend>canopen_core</depend>
   <depend>canopen_proxy_driver</depend>
   <depend>hardware_interface</depend>

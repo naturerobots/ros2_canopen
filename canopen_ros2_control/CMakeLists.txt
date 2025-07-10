@@ -8,6 +8,7 @@ endif()
 # find dependencies
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   canopen_402_driver
+  canopen_pre_mapped_driver
   canopen_core
   canopen_proxy_driver
   hardware_interface
@@ -28,6 +29,7 @@ endforeach()
 add_library(
   canopen_ros2_control
   SHARED
+  src/furo_pre_mapped_system.cpp
   src/canopen_system.cpp
   src/cia402_system.cpp
   src/robot_system.cpp

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 #include "canopen_ros2_control/furo_pre_mapped_system.hpp"
-
+#include <hardware_interface/types/hardware_interface_type_values.hpp>
 
 namespace
 {
@@ -42,6 +42,11 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_configure(
   const rclcpp_lifecycle::State & previous_state)
 {
   auto ret_val = CanopenSystem::on_configure(previous_state);
+  // auto drivers = device_container_->get_registered_drivers();
+
+  // for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+  //   auto pre_mapped_driver = std::static_pointer_cast<ros2_canopen::>
+  // }
   return ret_val;
 }
 
@@ -49,8 +54,25 @@ std::vector<hardware_interface::StateInterface> FuroPreMappedSystem::export_stat
 {
   std::vector<hardware_interface::StateInterface> state_interfaces;
 
-  //underlying base class export first
+  // underlying base class export first
   state_interfaces = CanopenSystem::export_state_interfaces();
+
+  for (uint i = 0; i < info_.joints.size(); i++) {
+
+    auto joint_name = info_.joints[i].name;
+
+    // actual position
+    state_interfaces.emplace_back(
+      hardware_interface::StateInterface(
+        joint_name, hardware_interface::HW_IF_POSITION,
+        &motor_data_[joint_name].actual_position));
+    // actual speed
+    state_interfaces.emplace_back(
+      hardware_interface::StateInterface(
+        joint_name, hardware_interface::HW_IF_VELOCITY,
+        &motor_data_[joint_name].actual_speed));
+
+  }
 
   return state_interfaces;
 }
@@ -58,9 +80,16 @@ std::vector<hardware_interface::StateInterface> FuroPreMappedSystem::export_stat
 std::vector<hardware_interface::CommandInterface> FuroPreMappedSystem::export_command_interfaces()
 {
   std::vector<hardware_interface::CommandInterface> command_interfaces;
-
+  // underlying base class export first
   command_interfaces = CanopenSystem::export_command_interfaces();
 
+  for (uint i = 0; i < info_.joints.size(); i++) {
+    // target
+    command_interfaces.emplace_back(
+      hardware_interface::CommandInterface(
+        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY,
+        &motor_data_[info_.joints[i].name].target_velocity));
+  }
   return command_interfaces;
 }
 

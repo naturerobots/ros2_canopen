@@ -73,8 +73,8 @@ ${dependencies}
 # which is appropriate when building the dll but not consuming it.
 target_compile_definitions(pre_mapped_driver PRIVATE "CANOPEN_PRE_MAPPED_DRIVER_BUILDING_LIBRARY")
 
-rclcpp_components_register_nodes(pre_mapped_driver "ros2_canopen::TeleopDriver")
-set(node_plugins "${node_plugins}ros2_canopen::TeleopDriver;$<TARGET_FILE:pre_mapped_driver >\n")
+rclcpp_components_register_nodes(pre_mapped_driver "ros2_canopen::PreMappedDriver")
+set(node_plugins "${node_plugins}ros2_canopen::PreMappedDriver;$<TARGET_FILE:pre_mapped_driver >\n")
 
 install(
 DIRECTORY include/

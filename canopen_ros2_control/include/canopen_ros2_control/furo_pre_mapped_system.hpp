@@ -66,7 +66,7 @@ public:
 
 protected:
   // Map to store motor nodes and their data
-  std::map<std::string, MotorNodeData> motor_nodes_;
+  std::map<std::string, MotorNodeData> motor_data_;
 
 // private:
 //   void initDeviceContainer();

@@ -81,6 +81,7 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::configure(bool called_from_base)
 {
   called_from_base = false;
+  // Call base class method
   NodeCanopenProxyDriver<NODETYPE>::configure(called_from_base);
   RCLCPP_INFO_STREAM(this->node_->get_logger(), "CONFIGURE");
   // Create ROS Publisher and Subscriber
@@ -92,6 +93,24 @@ void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
 {
   called_from_base = false;
   NodeCanopenProxyDriver<NODETYPE>::activate(called_from_base);
+
+  // Get CANopen Node ID
+  uint8_t node_id = this->lely_driver_->get_id();
+
+  // Configure motor controller via SDO's
+  try {
+    uint32_t tpdo1_cob_id = 0x180 + node_id;
+    this->lely_driver_->async_sdo_write_typed(0x1800, 0x01, tpdo1_cob_id);
+
+    uint32_t rpdo1_cob_id = 0x200 + node_id;
+    this->lely_driver_->async_sdo_write_typed(0x1800, 0x01, rpdo1_cob_id);
+    RCLCPP_INFO_STREAM(
+      this->node_->get_logger(),
+      "Successfully set SDOs for node ID: " << static_cast<int>(node_id));
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR_STREAM(this->node_->get_logger(), "SDO write failed: " << e.what());
+  }
+
   RCLCPP_INFO_STREAM(this->node_->get_logger(), "ACTIVATE");
 }
 

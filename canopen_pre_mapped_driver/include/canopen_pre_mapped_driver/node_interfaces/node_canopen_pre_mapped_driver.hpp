@@ -41,6 +41,7 @@ public:
   NodeCanopenPreMappedDriver(NODETYPE * node);
 
   void setupRosInterfaces();
+  bool write_target(double target, uint8_t rollover);
 
   virtual void init(bool called_from_base) override;
   virtual void configure(bool called_from_base) override;
@@ -49,6 +50,7 @@ public:
   virtual void cleanup(bool called_from_base) override;
   virtual void shutdown(bool called_from_base) override;
 
+  virtual bool stop_node_nmt_command();
 
 };
 }  // namespace node_interfaces

@@ -65,8 +65,11 @@ public:
   hardware_interface::return_type write(const rclcpp::Time & time, const rclcpp::Duration & period);
 
 protected:
-  // Map to store motor nodes and their data
+  // motor data for each registered joint name
   std::map<std::string, MotorNodeData> motor_data_;
+
+  uint8_t rollover;
+  bool motor_running_;  // Flag to indicate if the motor is running
 
 // private:
 //   void initDeviceContainer();

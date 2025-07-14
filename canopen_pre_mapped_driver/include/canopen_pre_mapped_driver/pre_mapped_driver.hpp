@@ -15,7 +15,6 @@
 //
 #ifndef CANOPEN_PRE_MAPPED_DRIVER_HPP_
 #define CANOPEN_PRE_MAPPED_DRIVER_HPP_
-
 #include "canopen_pre_mapped_driver/node_interfaces/node_canopen_pre_mapped_driver.hpp"
 #include "canopen_core/driver_node.hpp"
 
@@ -35,6 +34,11 @@ class PreMappedDriver : public ros2_canopen::CanopenDriver
 public:
   PreMappedDriver(rclcpp::NodeOptions node_options = rclcpp::NodeOptions());
 
+  bool write_target(double target, uint8_t rollover)
+  {
+    // return this->node_canopen_pre_mapped_driver_->write_target(target, rollover);
+    return true;
+  }
 
 };
 }  // namespace ros2_canopen

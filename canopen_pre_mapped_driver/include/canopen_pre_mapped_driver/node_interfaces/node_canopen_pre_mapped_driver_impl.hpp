@@ -93,12 +93,12 @@ void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
 {
   called_from_base = false;
   NodeCanopenProxyDriver<NODETYPE>::activate(called_from_base);
-
+  this->activated_.store(true);
   // Get CANopen Node ID
   uint8_t node_id = this->lely_driver_->get_id();
 
   // Configure motor controller via SDO's
-  try {
+  if (this->activated_.load()) {
     uint32_t tpdo1_cob_id = 0x180 + node_id;
     this->lely_driver_->async_sdo_write_typed(0x1800, 0x01, tpdo1_cob_id);
 
@@ -107,19 +107,36 @@ void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
     RCLCPP_INFO_STREAM(
       this->node_->get_logger(),
       "Successfully set SDOs for node ID: " << static_cast<int>(node_id));
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR_STREAM(this->node_->get_logger(), "SDO write failed: " << e.what());
+  } else {
+    RCLCPP_ERROR_STREAM(
+      this->node_->get_logger(), "Could not activate driver because it is not activated.");
   }
+  this->start_node_nmt_command();
+}
 
-  RCLCPP_INFO_STREAM(this->node_->get_logger(), "ACTIVATE");
+template<class NODETYPE>
+bool NodeCanopenPreMappedDriver<NODETYPE>::stop_node_nmt_command()
+{
+  if (this->lely_driver_ != nullptr) {
+    this->lely_driver_->nmt_command(canopen::NmtCommand::STOP);
+    return true;
+  }
+  RCLCPP_ERROR(
+    this->node_->get_logger(), "Could not stop device via NMT because driver not activated.");
+  return false;
 }
 
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::deactivate(bool called_from_base)
 {
-  called_from_base = false;
+  auto stopped = this->stop_node_nmt_command();
+  if (!stopped) {
+    RCLCPP_ERROR(
+      this->node_->get_logger(), "Could not stop device via NMT, Lely connection not there.");
+  }
   NodeCanopenProxyDriver<NODETYPE>::deactivate(called_from_base);
   RCLCPP_INFO_STREAM(this->node_->get_logger(), "DEACTIVATE");
+  this->activated_.store(false);
 }
 
 template<class NODETYPE>
@@ -127,6 +144,7 @@ void NodeCanopenPreMappedDriver<NODETYPE>::cleanup(bool called_from_base)
 {
   called_from_base = false;
   NodeCanopenProxyDriver<NODETYPE>::cleanup(called_from_base);
+  RCLCPP_INFO_STREAM(this->node_->get_logger(), "CLEANUP");
 }
 
 template<class NODETYPE>
@@ -137,4 +155,14 @@ void NodeCanopenPreMappedDriver<NODETYPE>::shutdown(bool called_from_base)
   RCLCPP_INFO_STREAM(this->node_->get_logger(), "SHUTDOWN");
 }
 
+template<class NODETYPE>
+bool NodeCanopenPreMappedDriver<NODETYPE>::write_target(double target, uint8_t rollover)
+{
+  // if (this->activated_.load()) {
+  //   // this->lely_driver_->universal_set_value(
+  //   //   0x6060, 0x00, static_cast<uint32_t>(target), rollover);
+  //   RCLCPP_INFO_STREAM(this->node_->get_logger(), "Writing target");
+  // }
+  return true;
+}
 #endif  // NODE_CANOPEN_PRE_MAPPED_DRIVER_IMPL_HPP_

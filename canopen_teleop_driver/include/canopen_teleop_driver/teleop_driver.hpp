@@ -60,6 +60,7 @@ public:
     node_canopen_teleop_driver_->register_rpdo_cb(rpdo_cb);
   }
 
+  void write_target();
 };
 }  // namespace ros2_canopen
 #endif // CANOPEN_TELEOP_DRIVER_HPP_

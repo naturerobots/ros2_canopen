@@ -38,70 +38,10 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_init(
   return CallbackReturn::SUCCESS;
 }
 
-void FuroPreMappedSystem::initDeviceContainer()
-{
-  std::string tmp_master_bin = (info_.hardware_parameters["master_bin"] == "\"\"") ?
-    "" :
-    info_.hardware_parameters["master_bin"];
-
-  device_container_->init(
-    info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
-    info_.hardware_parameters["bus_config"], tmp_master_bin);
-  auto drivers = device_container_->get_registered_drivers();
-  RCLCPP_INFO(kLogger, "Number of registered drivers: '%zu'", device_container_->count_drivers());
-  // for (auto it = drivers.begin(); it != drivers.end(); it++) {
-  //   auto driver = std::static_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
-
-  //   // initialize data for each node
-  //   canopen_data_[it->first] = CanopenNodeData();
-
-  //   auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id)
-  //     {canopen_data_[id].nmt_state.set_state(nmt_state);};
-  //   // register callback
-  //   driver->register_nmt_state_cb(nmt_state_cb);
-
-  //   auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id)
-  //     {canopen_data_[id].rpdo_data.set_data(data);};
-  //   // register callback
-  //   driver->register_rpdo_cb(rpdo_cb);
-
-  //   RCLCPP_INFO(
-  //     kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",  //
-  //     it->second->get_node_base_interface()->get_name(), it->first);
-  // }
-
-  RCLCPP_INFO(device_container_->get_logger(), "Initialisation successful.");
-}
-
 hardware_interface::CallbackReturn FuroPreMappedSystem::on_configure(
   const rclcpp_lifecycle::State & previous_state)
 {
-  executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
-  device_container_ = std::make_shared<ros2_canopen::DeviceContainer>(executor_);
-  executor_->add_node(device_container_);
-
-  // threads
-  FuroPreMappedSystem::initDeviceContainer();
-  spin_thread_ = std::make_unique<std::thread>(&FuroPreMappedSystem::spin, this);
-  // init_thread_ = std::make_unique<std::thread>(&FuroPreMappedSystem::initDeviceContainer, this);
-
-  // actually wait for init phase to end
-  // if (init_thread_->joinable()) {
-  //   init_thread_->join();
-  // } else {
-  //   RCLCPP_ERROR(kLogger, "Could not join init thread!");
-  //   return CallbackReturn::ERROR;
-  // }
-  motor_running_ = false; // Initialize motor running flag to false
-  return CallbackReturn::SUCCESS;
-
-  // auto ret_val = CanopenSystem::on_configure(previous_state);
-  // // auto drivers = device_container_->get_registered_drivers();
-
-  // // for (auto it = drivers.begin(); it != drivers.end(); ++it) {
-  // //   auto pre_mapped_driver = std::static_pointer_cast<ros2_canopen::>
-  // // }
-  // return ret_val;
+  return CanopenSystem::on_configure(previous_state);
 }
 
 std::vector<hardware_interface::StateInterface> FuroPreMappedSystem::export_state_interfaces()
@@ -162,14 +102,13 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_deactivate(
   const rclcpp_lifecycle::State & previous_state)
 {
   motor_running_ = false;
-  // auto drivers = device_container_->get_registered_drivers();
-  // for (auto it = drivers.begin(); it != drivers.end(); ++it) {
-  //   auto driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
-  //   if (driver) {
-  //     driver->get_node_canopen_driver_interface()->deactivate();
-  //   }
-  //   // it->second->get_node_canopen_driver_interface()->deactivate();
-  // }
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
+    if (driver) {
+      driver->get_node_canopen_driver_interface()->deactivate();
+    }
+  }
   auto ret_val = CanopenSystem::on_deactivate(previous_state);
   RCLCPP_INFO_STREAM(kLogger, "FuroPreMappedSystem DEACTIVATED");
   return ret_val;
@@ -191,11 +130,8 @@ hardware_interface::return_type FuroPreMappedSystem::write(
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
-    // auto a402_driver = std::dynamic_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    // auto pre_mapped_driver = std::static_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver != nullptr && motor_running_) {
-      // pre_mapped_driver->write_target();
-      pre_mapped_driver->halt_motor(1);
+      pre_mapped_driver->set_target(rollover, 0.0);
     }
   }
   rollover++;

@@ -234,123 +234,24 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::configure(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::configure(false);
-
-  RCLCPP_ERROR_STREAM(this->node_->get_logger(), "CONFIGURE");
-
-  // get channels part of configuration. this contains key value pairs as:
-  // <channel_id>:
-  //   <key>: <value>
-  //    ...
-  // <next_channel_id>:
-  //   <key>: <value>
-  //    ...
-  YAML::Node channels_conf;
-  try {
-    channels_conf = this->config_["motor_channels"];
-  } catch (...) {
-    RCLCPP_ERROR_STREAM(
-      this->node_->get_logger(),
-      "Cannot load channels for 402 driver. Make sure all 402 drivers have their channels defined in "
-      "the bus config.");
-    return;
-  }
-
-  // iterate over channels
-  for (auto it = channels_conf.begin(); it != channels_conf.end(); it++) {
-    auto channel_conf = it->second;
-
-    uint8_t channel = it->first.as<uint8_t>();
-    std::optional<std::string> joint_name;
-    std::optional<double> scale_pos_to_dev;
-    std::optional<double> scale_pos_from_dev;
-    std::optional<double> scale_vel_to_dev;
-    std::optional<double> scale_vel_from_dev;
-    std::optional<int> switching_state;
-    std::optional<int> default_operation_mode;
-    try {
-      joint_name = std::optional(channel_conf["joint_name"].as<std::string>());
-    } catch (...) {
-      RCLCPP_ERROR_STREAM(
-        this->node_->get_logger(), "Cannot find attribute joint_name for channel id " << channel
-                                                                                      << ". Make "
-          "sure these "
-          "are "
-          "defined "
-          "for all "
-          "402 "
-          "drivers in "
-          "the bus "
-          "config!");
-      return;
-    }
-    try {
-      scale_pos_to_dev = std::optional(channel_conf["scale_pos_to_dev"].as<double>());
-    } catch (...) {
-    }
-    try {
-      scale_pos_from_dev = std::optional(channel_conf["scale_pos_from_dev"].as<double>());
-    } catch (...) {
-    }
-    try {
-      scale_vel_to_dev = std::optional(channel_conf["scale_vel_to_dev"].as<double>());
-    } catch (...) {
-    }
-    try {
-      scale_vel_from_dev = std::optional(channel_conf["scale_vel_from_dev"].as<double>());
-    } catch (...) {
-    }
-    try {
-      switching_state = std::optional(channel_conf["switching_state"].as<int>());
-    } catch (...) {
-    }
-    try {
-      default_operation_mode = std::optional(channel_conf["default_operation_mode"].as<int>());
-    } catch (...) {
-    }
-
-    motors_[channel] =
-      std::make_shared<Motor402>(
-      nullptr,
-      (ros2_canopen::State402::InternalState)switching_state.value_or(
-        (int)ros2_canopen::State402::InternalState::Operation_Enable),
-      joint_name.value(), scale_pos_to_dev.value_or(1000.0),
-      scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
-      scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel);
-    motor_channels_.push_back(channel);
-
-    // create publishers and subscribers
-    setupRosInterfaces(joint_name.value(), channel);
-  }
 }
 
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::activate(false);
-  for (const auto & motor : motors_) {
-    motor.second->registerDefaultModes();
-    motor.second->set_diagnostic_status_msgs(
-      this->diagnostic_collector_,
-      this->diagnostic_enabled_);
-  }
 }
 
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::deactivate(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::deactivate(false);
-  timer_->cancel();
 }
 
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::poll_timer_callback()
 {
   NodeCanopenProxyDriver<NODETYPE>::poll_timer_callback();
-  for (const auto & motor : motors_) {
-    motor.second->handleRead();
-    motor.second->handleWrite();
-  }
-  publish();
 }
 
 template<class NODETYPE>
@@ -370,10 +271,6 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::add_to_master()
 {
   NodeCanopenProxyDriver<NODETYPE>::add_to_master();
-  for (const auto & motor : motors_) {
-    RCLCPP_INFO_STREAM(this->node_->get_logger(), "setting driver for motor");
-    motor.second->setDriver(this->lely_driver_);
-  }
 }
 
 template<class NODETYPE>
@@ -382,10 +279,9 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_init(
   std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
 {
   if (this->activated_.load()) {
-    bool temp = motors_[channel]->handleInit();
-    response->success = temp;
   }
 }
+
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::handle_recover(
   const std_srvs::srv::Trigger::Request::SharedPtr request,
@@ -393,7 +289,6 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_recover(
   uint8_t channel)
 {
   if (this->activated_.load()) {
-    response->success = motors_[channel]->handleRecover();
   }
 }
 template<class NODETYPE>
@@ -402,7 +297,6 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_halt(
   std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
 {
   if (this->activated_.load()) {
-    response->success = motors_[channel]->handleHalt();
   }
 }
 template<class NODETYPE>
@@ -411,7 +305,6 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_set_operation_mode(
   std_srvs::srv::Trigger::Response::SharedPtr response,
   uint8_t channel, uint16_t mode)
 {
-  response->success = set_operation_mode(channel, mode);
 }
 
 template<class NODETYPE>
@@ -420,7 +313,6 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_set_target(
   canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response, uint8_t channel)
 {
   if (this->activated_.load()) {
-    response->success = set_target(channel, request->target);
   }
 }
 
@@ -428,7 +320,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::init_motor(uint8_t channel)
 {
   if (this->activated_.load()) {
-    return motors_[channel]->handleInit();
+    return true;
   } else {
     RCLCPP_INFO(this->node_->get_logger(), "Initialisation failed.");
     return false;
@@ -439,7 +331,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::recover_motor(uint8_t channel)
 {
   if (this->activated_.load()) {
-    return motors_[channel]->handleRecover();
+    return true;
   } else {
     return false;
   }
@@ -449,7 +341,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::halt_motor(uint8_t channel)
 {
   if (this->activated_.load()) {
-    return motors_[channel]->handleHalt();
+    return true;
   } else {
     return false;
   }
@@ -459,26 +351,23 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::set_operation_mode(uint8_t channel, uint16_t mode)
 {
   if (this->activated_.load()) {
-    if (motors_[channel]->getMode() != mode) {
-      return motors_[channel]->enterModeAndWait(mode);
-    } else {
-      return false;
-    }
+    return true;
+  } else {
+    return false;
   }
-  return false;
 }
 
 template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::set_default_operation_mode(uint8_t channel)
 {
-  return set_operation_mode(channel, motors_[channel]->getDefaultOperationMode());
+  return true;
 }
 
 template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::set_target(uint8_t channel, double target)
 {
   if (this->activated_.load()) {
-    return motors_[channel]->setTarget(target);
+    return true;
   } else {
     return false;
   }
@@ -488,53 +377,53 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::diagnostic_callback(
   diagnostic_updater::DiagnosticStatusWrapper & stat)
 {
-  unsigned char summary_level = diagnostic_msgs::msg::DiagnosticStatus::OK;
-  std::string summary_msg = "";
+//   unsigned char summary_level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+//   std::string summary_msg = "";
 
-  for (const auto & motor : motors_) {
-    motor.second->handleDiag();
+//   for (const auto & motor : motors_) {
+//     motor.second->handleDiag();
 
-    if (this->diagnostic_collector_->getLevel() >= summary_level) {
-      summary_level = this->diagnostic_collector_->getLevel();
-      summary_msg = motor.second->getJointName() + ": " + this->diagnostic_collector_->getMessage();
-    }
+//     if (this->diagnostic_collector_->getLevel() >= summary_level) {
+//       summary_level = this->diagnostic_collector_->getLevel();
+//       summary_msg = motor.second->getJointName() + ": " + this->diagnostic_collector_->getMessage();
+//     }
 
-    stat.add(
-      motor.second->getJointName() + "_device_state",
-      this->diagnostic_collector_->getValue("DEVICE"));
-    stat.add(
-      motor.second->getJointName() + "_nmt_state",
-      this->diagnostic_collector_->getValue("NMT"));
-    stat.add(
-      motor.second->getJointName() + "_emcy_state",
-      this->diagnostic_collector_->getValue("EMCY"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_mode",
-      this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_mode"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_set_mode",
-      this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_mode"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_state",
-      this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_state"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_set_state",
-      this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_set_state",
-      this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_is_initialized",
-      this->diagnostic_collector_->getValue(
-        motor.second->getJointName() +
-        "_cia402_is_initialized"));
-    stat.add(
-      motor.second->getJointName() + "_cia402_has_communication_failure",
-      this->diagnostic_collector_->getValue(
-        motor.second->getJointName() +
-        "_cia402_has_communication_failure"));
-  }
-  stat.summary(summary_level, summary_msg);
+//     stat.add(
+//       motor.second->getJointName() + "_device_state",
+//       this->diagnostic_collector_->getValue("DEVICE"));
+//     stat.add(
+//       motor.second->getJointName() + "_nmt_state",
+//       this->diagnostic_collector_->getValue("NMT"));
+//     stat.add(
+//       motor.second->getJointName() + "_emcy_state",
+//       this->diagnostic_collector_->getValue("EMCY"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_mode",
+//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_mode"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_set_mode",
+//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_mode"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_state",
+//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_state"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_set_state",
+//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_set_state",
+//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_is_initialized",
+//       this->diagnostic_collector_->getValue(
+//         motor.second->getJointName() +
+//         "_cia402_is_initialized"));
+//     stat.add(
+//       motor.second->getJointName() + "_cia402_has_communication_failure",
+//       this->diagnostic_collector_->getValue(
+//         motor.second->getJointName() +
+//         "_cia402_has_communication_failure"));
+//   }
+//   stat.summary(summary_level, summary_msg);
 }
 
 #endif

@@ -34,14 +34,15 @@ auto const kLogger = rclcpp::get_logger("Cia402System");
 namespace canopen_ros2_control
 {
 
-Cia402System::Cia402System() : CanopenSystem()
+Cia402System::Cia402System()
+: CanopenSystem()
 {
 }
 
-hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interface::HardwareInfo& info)
+hardware_interface::CallbackReturn Cia402System::on_init(
+  const hardware_interface::HardwareInfo & info)
 {
-  if (CanopenSystem::on_init(info) != CallbackReturn::SUCCESS)
-  {
+  if (CanopenSystem::on_init(info) != CallbackReturn::SUCCESS) {
     return CallbackReturn::ERROR;
   }
 
@@ -51,15 +52,16 @@ hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interfac
 void Cia402System::initDeviceContainer()
 {
   std::string tmp_master_bin =
-      (info_.hardware_parameters["master_bin"] == "\"\"") ? "" : info_.hardware_parameters["master_bin"];
+    (info_.hardware_parameters["master_bin"] ==
+    "\"\"") ? "" : info_.hardware_parameters["master_bin"];
 
-  device_container_->init(info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
-                          info_.hardware_parameters["bus_config"], tmp_master_bin);
+  device_container_->init(
+    info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
+    info_.hardware_parameters["bus_config"], tmp_master_bin);
   auto drivers = device_container_->get_registered_drivers();
 
   RCLCPP_INFO(kLogger, "Number of registered drivers: '%lu'", device_container_->count_drivers());
-  for (auto it = drivers.begin(); it != drivers.end(); it++)
-  {
+  for (auto it = drivers.begin(); it != drivers.end(); it++) {
     auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     // initialize data for each node
@@ -69,23 +71,27 @@ void Cia402System::initDeviceContainer()
     canopen_data_[it->first] = CanopenNodeData();
 
     auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
-      canopen_data_[id].nmt_state.set_state(nmt_state);
-    };
+        canopen_data_[id].nmt_state.set_state(nmt_state);
+      };
     // register callback
     driver->register_nmt_state_cb(nmt_state_cb);
 
-    auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id) { canopen_data_[id].rpdo_data.set_data(data); };
+    auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id) {
+        canopen_data_[id].rpdo_data.set_data(data);
+      };
     // register callback
     driver->register_rpdo_cb(rpdo_cb);
 
-    RCLCPP_INFO(kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",
-                it->second->get_node_base_interface()->get_name(), it->first);
+    RCLCPP_INFO(
+      kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",
+      it->second->get_node_base_interface()->get_name(), it->first);
   }
 
   RCLCPP_INFO(device_container_->get_logger(), "Initialisation successful.");
 }
 
-hardware_interface::CallbackReturn Cia402System::on_configure(const rclcpp_lifecycle::State& previous_state)
+hardware_interface::CallbackReturn Cia402System::on_configure(
+  const rclcpp_lifecycle::State & previous_state)
 {
   executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
   device_container_ = std::make_shared<ros2_canopen::DeviceContainer>(executor_);
@@ -96,8 +102,7 @@ hardware_interface::CallbackReturn Cia402System::on_configure(const rclcpp_lifec
   init_thread_ = std::make_unique<std::thread>(&Cia402System::initDeviceContainer, this);
 
   // actually wait for init phase to end
-  if (init_thread_->joinable())
-  {
+  if (init_thread_->joinable()) {
     init_thread_->join();
 
     // TODO(livanov93): see how to handle configure once LifecycleCia402Driver is introduced
@@ -108,9 +113,7 @@ hardware_interface::CallbackReturn Cia402System::on_configure(const rclcpp_lifec
         d->configure();
     }
     */
-  }
-  else
-  {
+  } else {
     RCLCPP_ERROR(kLogger, "Could not join init thread!");
     return CallbackReturn::ERROR;
   }
@@ -124,8 +127,7 @@ std::vector<hardware_interface::StateInterface> Cia402System::export_state_inter
   // underlying base class export first
   state_interfaces = CanopenSystem::export_state_interfaces();
 
-  for (uint i = 0; i < info_.joints.size(); i++)
-  {
+  for (uint i = 0; i < info_.joints.size(); i++) {
     // if (info_.joints[i].parameters.find("node_id") == info_.joints[i].parameters.end())
     // {
     //   // skip adding motor canopen interfaces
@@ -135,11 +137,15 @@ std::vector<hardware_interface::StateInterface> Cia402System::export_state_inter
     // const uint8_t node_id = static_cast<uint8_t>(std::stoi(info_.joints[i].parameters["node_id"]));
 
     // actual position
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_POSITION, &motor_data_[info_.joints[i].name].actual_position));
+    state_interfaces.emplace_back(
+      hardware_interface::StateInterface(
+        info_.joints[i].name, hardware_interface::HW_IF_POSITION,
+        &motor_data_[info_.joints[i].name].actual_position));
     // actual speed
-    state_interfaces.emplace_back(hardware_interface::StateInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &motor_data_[info_.joints[i].name].actual_speed));
+    state_interfaces.emplace_back(
+      hardware_interface::StateInterface(
+        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY,
+        &motor_data_[info_.joints[i].name].actual_speed));
   }
 
   return state_interfaces;
@@ -152,8 +158,7 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
   // underlying base class export first
   command_interfaces = CanopenSystem::export_command_interfaces();
 
-  for (uint i = 0; i < info_.joints.size(); i++)
-  {
+  for (uint i = 0; i < info_.joints.size(); i++) {
     // if (info_.joints[i].parameters.find("node_id") == info_.joints[i].parameters.end())
     // {
     //   // skip adding canopen interfaces
@@ -163,64 +168,72 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
     // const uint8_t node_id = static_cast<uint8_t>(std::stoi(info_.joints[i].parameters["node_id"]));
 
     // target
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_POSITION, &motor_data_[info_.joints[i].name].target_position));
+    command_interfaces.emplace_back(
+      hardware_interface::CommandInterface(
+        info_.joints[i].name, hardware_interface::HW_IF_POSITION,
+        &motor_data_[info_.joints[i].name].target_position));
 
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &motor_data_[info_.joints[i].name].target_velocity));
+    command_interfaces.emplace_back(
+      hardware_interface::CommandInterface(
+        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY,
+        &motor_data_[info_.joints[i].name].target_velocity));
 
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_EFFORT, &motor_data_[info_.joints[i].name].target_torque));
+    command_interfaces.emplace_back(
+      hardware_interface::CommandInterface(
+        info_.joints[i].name, hardware_interface::HW_IF_EFFORT,
+        &motor_data_[info_.joints[i].name].target_torque));
   }
 
   return command_interfaces;
 }
 
-hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecycle::State& previous_state)
+hardware_interface::CallbackReturn Cia402System::on_activate(
+  const rclcpp_lifecycle::State & previous_state)
 {
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                                << motion_controller_driver->get_motor_joint_name(motor_channel));
-      if (!motion_controller_driver->init_motor(motor_channel))
-      {
-        RCLCPP_ERROR_STREAM(kLogger, "Failed to init motor "
-                                         << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+      RCLCPP_INFO_STREAM(
+        kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
+                               << motion_controller_driver->get_motor_joint_name(motor_channel));
+      if (!motion_controller_driver->init_motor(motor_channel)) {
+        RCLCPP_ERROR_STREAM(
+          kLogger, "Failed to init motor "
+            << it->first << " channel " << (int)motor_channel << " joint_name: "
+            << motion_controller_driver->get_motor_joint_name(motor_channel));
       }
 
-      RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
-                                      << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                      << motion_controller_driver->get_motor_joint_name(motor_channel));
-      if (!motion_controller_driver->set_default_operation_mode(motor_channel))
-      {
-        RCLCPP_ERROR_STREAM(kLogger, "Failed to set operation mode for motor "
-                                         << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+      RCLCPP_INFO_STREAM(
+        kLogger, "Set operation mode for motor "
+          << it->first << " channel " << (int)motor_channel << " joint_name: "
+          << motion_controller_driver->get_motor_joint_name(motor_channel));
+      if (!motion_controller_driver->set_default_operation_mode(motor_channel)) {
+        RCLCPP_ERROR_STREAM(
+          kLogger, "Failed to set operation mode for motor "
+            << it->first << " channel " << (int)motor_channel << " joint_name: "
+            << motion_controller_driver->get_motor_joint_name(motor_channel));
       }
     }
   }
   return CanopenSystem::on_activate(previous_state);
 }
 
-hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)
+hardware_interface::CallbackReturn Cia402System::on_deactivate(
+  const rclcpp_lifecycle::State & previous_state)
 {
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      if (!motion_controller_driver->halt_motor(motor_channel))
-      {
-        RCLCPP_ERROR_STREAM(kLogger, "Failed to deactivate motor for joint "
-                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+      if (!motion_controller_driver->halt_motor(motor_channel)) {
+        RCLCPP_ERROR_STREAM(
+          kLogger, "Failed to deactivate motor for joint "
+            << motion_controller_driver->get_motor_joint_name(motor_channel));
         return CallbackReturn::FAILURE;
       }
     }
@@ -228,7 +241,8 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
   return CanopenSystem::on_deactivate(previous_state);
 }
 
-hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, const rclcpp::Duration& period)
+hardware_interface::return_type Cia402System::read(const rclcpp::Time & time,
+  const rclcpp::Duration & period)
 {
   // TODO(anyone): read robot states
 
@@ -236,31 +250,30 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
 
   auto drivers = device_container_->get_registered_drivers();
 
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     bool com_failure = false;
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
       // get position
       motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position =
-          motion_controller_driver->get_position(motor_channel);
+        motion_controller_driver->get_position(motor_channel);
       // get speed
       motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed =
-          motion_controller_driver->get_speed(motor_channel);
+        motion_controller_driver->get_speed(motor_channel);
 
       // check for communication failure -> if com fails, motors will return weird position and speed values
       com_failure |= motion_controller_driver->has_motor_communication_failure(motor_channel);
     }
 
-    if (com_failure)
-    {
+    if (com_failure) {
       // if we got weird position and speed values from the motors, just set the feedbacks to 0
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position = 0.0;
-        motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed = 0.0;
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+        motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position =
+          0.0;
+        motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed =
+          0.0;
       }
     }
   }
@@ -273,11 +286,10 @@ void Cia402System::stop_all_motors()
   RCLCPP_INFO(kLogger, "Stopping all motors ...");
 
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
       motion_controller_driver->set_target(motor_channel, 0);
     }
   }
@@ -286,13 +298,11 @@ void Cia402System::stop_all_motors()
 bool Cia402System::has_motor_communication_failure()
 {
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      if (motion_controller_driver->has_motor_communication_failure(motor_channel))
-      {
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+      if (motion_controller_driver->has_motor_communication_failure(motor_channel)) {
         return true;
       }
     }
@@ -303,13 +313,11 @@ bool Cia402System::has_motor_communication_failure()
 bool Cia402System::is_motor_faulty()
 {
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      if (motion_controller_driver->is_motor_faulty(motor_channel))
-      {
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+      if (motion_controller_driver->is_motor_faulty(motor_channel)) {
         return true;
       }
     }
@@ -320,13 +328,11 @@ bool Cia402System::is_motor_faulty()
 bool Cia402System::is_motor_uninitialized()
 {
   auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      if (!motion_controller_driver->is_motor_initialized(motor_channel))
-      {
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+      if (!motion_controller_driver->is_motor_initialized(motor_channel)) {
         return true;
       }
     }
@@ -334,13 +340,13 @@ bool Cia402System::is_motor_uninitialized()
   return false;
 }
 
-hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
+hardware_interface::return_type Cia402System::write(const rclcpp::Time & time,
+  const rclcpp::Duration & period)
 {
   auto drivers = device_container_->get_registered_drivers();
 
   // at least one motor cant be reached
-  if (has_motor_communication_failure())
-  {
+  if (has_motor_communication_failure()) {
     // stop all motors
     // we cant do anything else right now other than waiting for the motor to be available again
     stop_all_motors();
@@ -349,26 +355,26 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
   }
 
   // at least one motor is faulty
-  if (is_motor_uninitialized())
-  {
+  if (is_motor_uninitialized()) {
     // stop all motors
     stop_all_motors();
 
     // initialize all uninitialized motors
-    for (auto it = drivers.begin(); it != drivers.end(); ++it)
-    {
-      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        if (!motion_controller_driver->is_motor_initialized(motor_channel))
-        {
-          RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                                    << motion_controller_driver->get_motor_joint_name(motor_channel));
+    for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(
+        it->second);
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+        if (!motion_controller_driver->is_motor_initialized(motor_channel)) {
+          RCLCPP_INFO_STREAM(
+            kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                   << motion_controller_driver->get_motor_joint_name(
+              motor_channel));
           motion_controller_driver->init_motor(motor_channel);
 
-          RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
-                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
+          RCLCPP_INFO_STREAM(
+            kLogger, "Set operation mode for motor "
+              << it->first << " channel " << (int)motor_channel << " joint_name: "
+              << motion_controller_driver->get_motor_joint_name(motor_channel));
           motion_controller_driver->set_default_operation_mode(motor_channel);
         }
       }
@@ -379,22 +385,20 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
   }
 
   // at least one motor is faulty
-  if (is_motor_faulty())
-  {
+  if (is_motor_faulty()) {
     // stop all motors
     stop_all_motors();
 
     // recover motor from fault
-    for (auto it = drivers.begin(); it != drivers.end(); ++it)
-    {
-      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        if (motion_controller_driver->is_motor_faulty(motor_channel))
-        {
-          RCLCPP_INFO_STREAM(kLogger, "Recover motor from fault: "
-                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
+    for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(
+        it->second);
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+        if (motion_controller_driver->is_motor_faulty(motor_channel)) {
+          RCLCPP_INFO_STREAM(
+            kLogger, "Recover motor from fault: "
+              << it->first << " channel " << (int)motor_channel << " joint_name: "
+              << motion_controller_driver->get_motor_joint_name(motor_channel));
           motion_controller_driver->recover_motor(motor_channel);
         }
       }
@@ -404,55 +408,53 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     return hardware_interface::return_type::OK;
   }
 
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto motion_controller_driver =
+      std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     // do same as in proxy system first - handle nmt, tpdo, rpdo
     // reset node nmt
-    if (canopen_data_[it->first].nmt_state.reset_command())
-    {
+    if (canopen_data_[it->first].nmt_state.reset_command()) {
       motion_controller_driver->reset_node_nmt_command();
     }
 
     // start nmt
-    if (canopen_data_[it->first].nmt_state.start_command())
-    {
+    if (canopen_data_[it->first].nmt_state.start_command()) {
       motion_controller_driver->start_node_nmt_command();
     }
 
     // tpdo data one shot mechanism
-    if (canopen_data_[it->first].tpdo_data.write_command())
-    {
+    if (canopen_data_[it->first].tpdo_data.write_command()) {
       canopen_data_[it->first].tpdo_data.prepare_data();
       motion_controller_driver->tpdo_transmit(canopen_data_[it->first].tpdo_data.original_data);
     }
 
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      const uint16_t& mode = motion_controller_driver->get_mode(motor_channel);
-      switch (mode)
-      {
+    for (auto motor_channel : motion_controller_driver->get_available_motor_channels()) {
+      const uint16_t & mode = motion_controller_driver->get_mode(motor_channel);
+      switch (mode) {
         case MotorBase::No_Mode:
           break;
         case MotorBase::Profiled_Position:
         case MotorBase::Cyclic_Synchronous_Position:
         case MotorBase::Interpolated_Position:
           motion_controller_driver->set_target(
-              motor_channel,
-              motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_position);
+            motor_channel,
+            motor_data_[motion_controller_driver->get_motor_joint_name(
+              motor_channel)].target_position);
           break;
         case MotorBase::Profiled_Velocity:
         case MotorBase::Velocity:
         case MotorBase::Cyclic_Synchronous_Velocity:
           motion_controller_driver->set_target(
-              motor_channel,
-              motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_velocity);
+            motor_channel,
+            motor_data_[motion_controller_driver->get_motor_joint_name(
+              motor_channel)].target_velocity);
           break;
         case MotorBase::Profiled_Torque:
         case MotorBase::Cyclic_Synchronous_Torque:
           motion_controller_driver->set_target(
-              motor_channel, motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_torque);
+            motor_channel, motor_data_[motion_controller_driver->get_motor_joint_name(
+              motor_channel)].target_torque);
           break;
         default:
           RCLCPP_INFO(kLogger, "Mode %u not supported", mode);

@@ -1,4 +1,5 @@
 //    Copyright 2023 Christoph Hellmann Santos
+//    Copyright 2014-2022 Authors of ros_canopen
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,18 +15,30 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "canopen_pre_mapped_driver/pre_mapped_driver.hpp"
+#ifndef HOMING_MODE_HPP
+#define HOMING_MODE_HPP
+#include "base.hpp"
+#include "mode.hpp"
 
-using namespace ros2_canopen;
-
-PreMappedDriver::PreMappedDriver(rclcpp::NodeOptions node_options)
-: CanopenDriver(node_options)
+namespace ros2_canopen
 {
-  node_canopen_pre_mapped_driver_ =
-    std::make_shared<node_interfaces::NodeCanopenPreMappedDriver<rclcpp::Node>>(this);
-  node_canopen_driver_ = std::static_pointer_cast<node_interfaces::NodeCanopenDriverInterface>(
-    node_canopen_pre_mapped_driver_);
-}
+class HomingMode : public Mode
+{
+protected:
+  enum SW_bits
+  {
+    SW_Attained = State402::SW_Operation_mode_specific0,
+    SW_Error = State402::SW_Operation_mode_specific1,
+  };
+  enum CW_bits
+  {
+    CW_StartHoming = Command402::CW_Operation_mode_specific0,
+  };
 
-#include "rclcpp_components/register_node_macro.hpp"
-RCLCPP_COMPONENTS_REGISTER_NODE(ros2_canopen::PreMappedDriver)
+public:
+  HomingMode() : Mode(MotorBase::Homing) {}
+  virtual bool executeHoming() = 0;
+};
+}  // namespace ros2_canopen
+
+#endif  // HOMING_MODE_HPP

@@ -2,105 +2,148 @@ cmake_minimum_required(VERSION 3.8)
 project(canopen_pre_mapped_driver)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
+  add_compile_options(-Wall -Wpedantic -Wextra -Wno-unused-parameter)
 endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_ros REQUIRED)
+find_package(canopen_base_driver REQUIRED)
+find_package(canopen_core REQUIRED)
+find_package(canopen_interfaces REQUIRED)
+find_package(canopen_proxy_driver REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
-find_package(lifecycle_msgs REQUIRED)
-find_package(canopen_core REQUIRED)
-find_package(canopen_interfaces REQUIRED)
-find_package(canopen_base_driver REQUIRED)
-find_package(canopen_proxy_driver REQUIRED)
-find_package(lely_core_libraries REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
 set(dependencies
-rclcpp
-rclcpp_components
-rclcpp_lifecycle
-lifecycle_msgs
-canopen_core
-canopen_interfaces
-canopen_base_driver
-canopen_proxy_driver
-lely_core_libraries
-sensor_msgs
-std_msgs
-std_srvs
+  canopen_base_driver
+  canopen_core
+  canopen_interfaces
+  canopen_proxy_driver
+  rclcpp
+  rclcpp_lifecycle
+  rclcpp_components
+  sensor_msgs
+  std_srvs
 )
 
-# Functionality library
+add_library(lely_motion_controller_bridge
+  src/motor.cpp
+  src/command.cpp
+  src/state.cpp
+  src/default_homing_mode.cpp
+)
+target_compile_features(lely_motion_controller_bridge PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_options(lely_motion_controller_bridge PUBLIC -Wl,--no-undefined)
+target_include_directories(lely_motion_controller_bridge PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
+ament_target_dependencies(
+  lely_motion_controller_bridge
+  ${dependencies}
+)
+
+
 add_library(node_canopen_pre_mapped_driver
-src/node_interfaces/node_canopen_pre_mapped_driver.cpp
+  src/node_interfaces/node_canopen_pre_mapped_driver.cpp
 )
 target_compile_features(node_canopen_pre_mapped_driver PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_compile_options(node_canopen_pre_mapped_driver PUBLIC -Wl,--no-undefined)
 target_include_directories(node_canopen_pre_mapped_driver PUBLIC
-$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-$<INSTALL_INTERFACE:include>)
-
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(node_canopen_pre_mapped_driver
+  lely_motion_controller_bridge
+)
 ament_target_dependencies(
-node_canopen_pre_mapped_driver
-${dependencies}
+  node_canopen_pre_mapped_driver
+  ${dependencies}
+
 )
 
-# Non lifecycle driver
+add_library(lifecycle_cia402_driver
+  src/lifecycle_cia402_driver.cpp
+)
+target_compile_features(lifecycle_cia402_driver PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_options(lifecycle_cia402_driver PUBLIC -Wl,--no-undefined)
+target_include_directories(lifecycle_cia402_driver PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
+target_link_libraries(lifecycle_cia402_driver
+  node_canopen_pre_mapped_driver
+  lely_motion_controller_bridge
+)
+ament_target_dependencies(
+  lifecycle_cia402_driver
+  ${dependencies}
+)
+# Causes the visibility macros to use dllexport rather than dllimport,
+# which is appropriate when building the dll but not consuming it.
+target_compile_definitions(lifecycle_cia402_driver PRIVATE "CANOPEN_402_DRIVER_BUILDING_LIBRARY")
+
+rclcpp_components_register_nodes(lifecycle_cia402_driver "ros2_canopen::LifecycleCia402Driver")
+set(node_plugins "${node_plugins}ros2_canopen::LifecycleCia402Driver;$<TARGET_FILE:lifecycle_cia402_driver>\n")
+
+
+
+
 add_library(pre_mapped_driver
-  SHARED
   src/pre_mapped_driver.cpp
 )
 target_compile_features(pre_mapped_driver PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_compile_options(pre_mapped_driver PUBLIC -Wl,--no-undefined)
 target_include_directories(pre_mapped_driver PUBLIC
-$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-$<INSTALL_INTERFACE:include>)
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
 target_link_libraries(pre_mapped_driver
-node_canopen_pre_mapped_driver
+  node_canopen_pre_mapped_driver
+  lely_motion_controller_bridge
 )
 
 ament_target_dependencies(
-pre_mapped_driver
-${dependencies}
+  pre_mapped_driver
+  ${dependencies}
 )
 
 # Causes the visibility macros to use dllexport rather than dllimport,
 # which is appropriate when building the dll but not consuming it.
-target_compile_definitions(pre_mapped_driver PRIVATE "CANOPEN_PRE_MAPPED_DRIVER_BUILDING_LIBRARY")
+target_compile_definitions(pre_mapped_driver PRIVATE "CANOPEN_pre_mapped_driver_BUILDING_LIBRARY")
 
 rclcpp_components_register_nodes(pre_mapped_driver "ros2_canopen::PreMappedDriver")
-set(node_plugins "${node_plugins}ros2_canopen::PreMappedDriver;$<TARGET_FILE:pre_mapped_driver >\n")
+set(node_plugins "${node_plugins}ros2_canopen::PreMappedDriver;$<TARGET_FILE:pre_mapped_driver>\n")
 
 install(
-DIRECTORY include/
-DESTINATION include
+  DIRECTORY include/
+  DESTINATION include
 )
 
 install(
-TARGETS pre_mapped_driver node_canopen_pre_mapped_driver
-EXPORT export_${PROJECT_NAME}
-ARCHIVE DESTINATION lib
-LIBRARY DESTINATION lib
-RUNTIME DESTINATION bin
+  TARGETS lifecycle_cia402_driver pre_mapped_driver node_canopen_pre_mapped_driver lely_motion_controller_bridge
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
-
-if(BUILD_TESTING)
-endif()
 
 ament_export_include_directories(
-include
+  include
 )
 ament_export_libraries(
-pre_mapped_driver
-node_canopen_pre_mapped_driver
+  lifecycle_cia402_driver
+  pre_mapped_driver
+  node_canopen_pre_mapped_driver
+  lely_motion_controller_bridge
 )
 ament_export_targets(
-export_${PROJECT_NAME}
+  export_${PROJECT_NAME}
+)
+ament_export_dependencies(
+  ${dependencies}
 )
 
 ament_package()

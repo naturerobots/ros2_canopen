@@ -14,18 +14,20 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "canopen_pre_mapped_driver/pre_mapped_driver.hpp"
+#include "canopen_pre_mapped_driver/lifecycle_cia402_driver.hpp"
 
 using namespace ros2_canopen;
 
-PreMappedDriver::PreMappedDriver(rclcpp::NodeOptions node_options)
-: CanopenDriver(node_options)
+LifecycleCia402Driver::LifecycleCia402Driver(rclcpp::NodeOptions node_options)
+: LifecycleCanopenDriver(node_options)
 {
   node_canopen_pre_mapped_driver_ =
-    std::make_shared<node_interfaces::NodeCanopenPreMappedDriver<rclcpp::Node>>(this);
-  node_canopen_driver_ = std::static_pointer_cast<node_interfaces::NodeCanopenDriverInterface>(
+    std::make_shared<node_interfaces::NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>>(
+    this);
+  node_canopen_driver_ =
+    std::static_pointer_cast<node_interfaces::NodeCanopenDriverInterface>(
     node_canopen_pre_mapped_driver_);
 }
 
 #include "rclcpp_components/register_node_macro.hpp"
-RCLCPP_COMPONENTS_REGISTER_NODE(ros2_canopen::PreMappedDriver)
+RCLCPP_COMPONENTS_REGISTER_NODE(ros2_canopen::LifecycleCia402Driver)

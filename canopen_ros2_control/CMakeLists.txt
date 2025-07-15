@@ -20,6 +20,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
 
 find_package(ros2_control_test_assets)
 find_package(ament_cmake_gmock REQUIRED)
+find_package(backward_ros REQUIRED)
 
 find_package(ament_cmake REQUIRED)
 foreach(Dependency IN ITEMS ${THIS_PACKAGE_INCLUDE_DEPENDS})

@@ -2,28 +2,25 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>canopen_pre_mapped_driver</name>
-  <version>0.1.0</version>
-  <description>Package to control devices with pre-mapped structure</description>
-  <maintainer email="georg.john@naturerobots.com">docker</maintainer>
+  <version>0.2.7</version>
+  <description>Driver for devices implementing with pre mapped profile</description>
+  <maintainer email="christoph.hellmann.santos@ipa.fraunhofer.de">Christoph Hellmann Santos</maintainer>
   <license>LGPL-v3</license>
 
-  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_ros</buildtool_depend>
 
+  <depend>boost</depend>
+  <depend>canopen_base_driver</depend>
+  <depend>canopen_core</depend>
+  <depend>canopen_interfaces</depend>
+  <depend>canopen_proxy_driver</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
   <depend>rclcpp_lifecycle</depend>
-  <depend>lifecycle_msgs</depend>
-  <depend>canopen_core</depend>
-  <depend>canopen_interfaces</depend>
-  <depend>canopen_base_driver</depend>
-  <depend>canopen_proxy_driver</depend>
-  <depend>lely_core_libraries</depend>
   <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
   <depend>std_srvs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -1,4 +1,4 @@
-//    Copyright 2025 Georg John, Nature Robots GmbH
+//    Copyright 2023 Christoph Hellmann Santos
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 
 #include "canopen_pre_mapped_driver/node_interfaces/node_canopen_pre_mapped_driver.hpp"
 #include "canopen_pre_mapped_driver/node_interfaces/node_canopen_pre_mapped_driver_impl.hpp"
+#include "canopen_core/driver_error.hpp"
 
 using namespace ros2_canopen::node_interfaces;
 

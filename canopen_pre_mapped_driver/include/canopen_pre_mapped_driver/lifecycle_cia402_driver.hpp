@@ -14,26 +14,27 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CANOPEN_PRE_MAPPED_DRIVER__PRE_MAPPED_DRIVER_HPP_
-#define CANOPEN_PRE_MAPPED_DRIVER__PRE_MAPPED_DRIVER_HPP_
+#ifndef CANOPEN_402_DRIVER__CANOPEN_LIFECYCLE_402_DRIVER_HPP_
+#define CANOPEN_402_DRIVER__CANOPEN_LIFECYCLE_402_DRIVER_HPP_
+
 #include "canopen_pre_mapped_driver/node_interfaces/node_canopen_pre_mapped_driver.hpp"
 #include "canopen_core/driver_node.hpp"
 
 namespace ros2_canopen
 {
 /**
- * @brief Abstract Class for a CANopen Device Node
+ * @brief Lifecycle 402 Driver
  *
- * This class provides the base functionality for creating a
- * CANopen device node. It provides callbacks for nmt and rpdo.
+ * A very basic driver without any functionality.
+ *
  */
-class PreMappedDriver : public ros2_canopen::CanopenDriver
+class LifecycleCia402Driver : public ros2_canopen::LifecycleCanopenDriver
 {
-  std::shared_ptr<node_interfaces::NodeCanopenPreMappedDriver<rclcpp::Node>>
+  std::shared_ptr<node_interfaces::NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>>
   node_canopen_pre_mapped_driver_;
 
 public:
-  PreMappedDriver(rclcpp::NodeOptions node_options = rclcpp::NodeOptions());
+  LifecycleCia402Driver(rclcpp::NodeOptions node_options = rclcpp::NodeOptions());
 
   virtual bool reset_node_nmt_command()
   {

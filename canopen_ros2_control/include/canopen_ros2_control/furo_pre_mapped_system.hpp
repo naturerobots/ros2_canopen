@@ -17,7 +17,6 @@
 #define CANOPEN_ROS2_CONTROL__FURO_PRE_MAPPED_SYSTEM_HPP_
 
 #include "canopen_pre_mapped_driver/pre_mapped_driver.hpp"
-#include "canopen_402_driver/cia402_driver.hpp"
 #include "canopen_ros2_control/canopen_system.hpp"
 
 namespace canopen_ros2_control

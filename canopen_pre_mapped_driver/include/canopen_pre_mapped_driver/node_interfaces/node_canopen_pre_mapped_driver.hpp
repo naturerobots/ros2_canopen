@@ -43,25 +43,11 @@ protected:
   std::map<uint8_t, std::shared_ptr<Motor402>> motors_;  // map from channel to motor
   std::vector<uint8_t> motor_channels_;                  // list of all registered motor channels
   rclcpp::TimerBase::SharedPtr timer_;
-  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_init_service;
-  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_halt_service;
-  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_recover_service;
-  std::map<uint8_t,
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_position_service;
-  std::map<uint8_t,
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_torque_service;
-  std::map<uint8_t,
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_velocity_service;
-  std::map<uint8_t,
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_cyclic_velocity_service;
-  std::map<uint8_t,
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_cyclic_position_service;
-  std::map<uint8_t,
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr>
-  handle_set_mode_interpolated_position_service;
-  std::map<uint8_t,
-    rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr> handle_set_target_service;
-  std::map<uint8_t, rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr> publish_joint_state;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_init_service;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_halt_service;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_recover_service;
+  rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr handle_set_target_service;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr publish_joint_state;
 
   void publish();
   virtual void poll_timer_callback() override;

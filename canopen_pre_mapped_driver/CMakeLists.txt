@@ -30,20 +30,18 @@ set(dependencies
   std_srvs
 )
 
-add_library(lely_motion_controller_bridge
+add_library(lely_pre_mapped_controller_bridge
   src/motor.cpp
-  src/command.cpp
   src/state.cpp
-  src/default_homing_mode.cpp
 )
-target_compile_features(lely_motion_controller_bridge PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-target_compile_options(lely_motion_controller_bridge PUBLIC -Wl,--no-undefined)
-target_include_directories(lely_motion_controller_bridge PUBLIC
+target_compile_features(lely_pre_mapped_controller_bridge PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_compile_options(lely_pre_mapped_controller_bridge PUBLIC -Wl,--no-undefined)
+target_include_directories(lely_pre_mapped_controller_bridge PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
 ament_target_dependencies(
-  lely_motion_controller_bridge
+  lely_pre_mapped_controller_bridge
   ${dependencies}
 )
 
@@ -57,39 +55,13 @@ target_include_directories(node_canopen_pre_mapped_driver PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(node_canopen_pre_mapped_driver
-  lely_motion_controller_bridge
+  lely_pre_mapped_controller_bridge
 )
 ament_target_dependencies(
   node_canopen_pre_mapped_driver
   ${dependencies}
 
 )
-
-add_library(lifecycle_cia402_driver
-  src/lifecycle_cia402_driver.cpp
-)
-target_compile_features(lifecycle_cia402_driver PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-target_compile_options(lifecycle_cia402_driver PUBLIC -Wl,--no-undefined)
-target_include_directories(lifecycle_cia402_driver PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-
-target_link_libraries(lifecycle_cia402_driver
-  node_canopen_pre_mapped_driver
-  lely_motion_controller_bridge
-)
-ament_target_dependencies(
-  lifecycle_cia402_driver
-  ${dependencies}
-)
-# Causes the visibility macros to use dllexport rather than dllimport,
-# which is appropriate when building the dll but not consuming it.
-target_compile_definitions(lifecycle_cia402_driver PRIVATE "CANOPEN_402_DRIVER_BUILDING_LIBRARY")
-
-rclcpp_components_register_nodes(lifecycle_cia402_driver "ros2_canopen::LifecycleCia402Driver")
-set(node_plugins "${node_plugins}ros2_canopen::LifecycleCia402Driver;$<TARGET_FILE:lifecycle_cia402_driver>\n")
-
-
 
 
 add_library(pre_mapped_driver
@@ -102,7 +74,7 @@ target_include_directories(pre_mapped_driver PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(pre_mapped_driver
   node_canopen_pre_mapped_driver
-  lely_motion_controller_bridge
+  lely_pre_mapped_controller_bridge
 )
 
 ament_target_dependencies(
@@ -123,7 +95,7 @@ install(
 )
 
 install(
-  TARGETS lifecycle_cia402_driver pre_mapped_driver node_canopen_pre_mapped_driver lely_motion_controller_bridge
+  TARGETS pre_mapped_driver node_canopen_pre_mapped_driver lely_pre_mapped_controller_bridge
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -134,10 +106,9 @@ ament_export_include_directories(
   include
 )
 ament_export_libraries(
-  lifecycle_cia402_driver
   pre_mapped_driver
   node_canopen_pre_mapped_driver
-  lely_motion_controller_bridge
+  lely_pre_mapped_controller_bridge
 )
 ament_export_targets(
   export_${PROJECT_NAME}

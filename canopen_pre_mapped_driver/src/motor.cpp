@@ -19,7 +19,7 @@
 #include "canopen_pre_mapped_driver/motor.hpp"
 using namespace ros2_canopen;
 
-bool Motor402::setTarget(double val)
+bool PreMappedMotor::setTarget(double val)
 {
   if (state_handler_.getState() == State402::Operation_Enable) {
     auto target = val * scale_vel_to_dev_;
@@ -28,12 +28,12 @@ bool Motor402::setTarget(double val)
   return false;
 }
 
-uint16_t Motor402::getMode()
+uint16_t PreMappedMotor::getMode()
 {
   return selected_mode_->mode_id_;
 }
 
-bool Motor402::readState()
+bool PreMappedMotor::readState()
 {
   if (this->driver == nullptr || this->status_word_entry_index == 0 || op_mode_display_index == 0) {
     return false;
@@ -72,12 +72,12 @@ bool Motor402::readState()
   return true;
 }
 
-void Motor402::handleRead()
+void PreMappedMotor::handleRead()
 {
   readState();
 }
 
-void Motor402::handleWrite()
+void PreMappedMotor::handleWrite()
 {
   if (this->driver == nullptr || this->control_word_entry_index == 0) {
     return;
@@ -86,7 +86,7 @@ void Motor402::handleWrite()
   } else {
   }
 }
-void Motor402::handleDiag()
+void PreMappedMotor::handleDiag()
 {
   uint16_t sw = status_word_;
   State402::InternalState state = state_handler_.getState();
@@ -182,7 +182,7 @@ void Motor402::handleDiag()
   }
 }
 
-bool Motor402::handleInit()
+bool PreMappedMotor::handleInit()
 {
 
   status_word_entry_index = 0x6041;
@@ -203,12 +203,12 @@ bool Motor402::handleInit()
   initialized_ = true;
   return true;
 }
-bool Motor402::handleShutdown()
+bool PreMappedMotor::handleShutdown()
 {
   return true;
 }
 
-bool Motor402::handleHalt()
+bool PreMappedMotor::handleHalt()
 {
   State402::InternalState state = state_handler_.getState();
 
@@ -218,7 +218,7 @@ bool Motor402::handleHalt()
   }
   return true;
 }
-bool Motor402::handleRecover()
+bool PreMappedMotor::handleRecover()
 {
   start_fault_reset_ = true;
   {
@@ -230,7 +230,7 @@ bool Motor402::handleRecover()
   return true;
 }
 
-bool Motor402::isFaulty()
+bool PreMappedMotor::isFaulty()
 {
   State402::InternalState state = state_handler_.getState();
   if (state != State402::Operation_Enable && state != State402::Quick_Stop_Active) {
@@ -239,17 +239,17 @@ bool Motor402::isFaulty()
   return false;
 }
 
-bool Motor402::hasCommunicationFailure()
+bool PreMappedMotor::hasCommunicationFailure()
 {
   return has_communication_failure_;
 }
 
-bool Motor402::isInitialized()
+bool PreMappedMotor::isInitialized()
 {
   return initialized_;
 }
 
-bool Motor402::isHalted()
+bool PreMappedMotor::isHalted()
 {
   State402::InternalState state = state_handler_.getState();
   if (state == State402::Quick_Stop_Active) {

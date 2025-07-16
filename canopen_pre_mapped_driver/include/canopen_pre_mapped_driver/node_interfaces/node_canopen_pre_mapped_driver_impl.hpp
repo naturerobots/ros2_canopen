@@ -53,9 +53,7 @@ void NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>::init(bool call
 }
 
 template<>
-void NodeCanopenPreMappedDriver<rclcpp::Node>::setupRosInterfaces(
-  const std::string & joint_name,
-  uint8_t channel)
+void NodeCanopenPreMappedDriver<rclcpp::Node>::setupRosInterfaces(const std::string & joint_name)
 {
   publish_joint_state =
     this->node_->create_publisher<sensor_msgs::msg::JointState>(
@@ -64,38 +62,37 @@ void NodeCanopenPreMappedDriver<rclcpp::Node>::setupRosInterfaces(
 
   handle_init_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/init",
-    [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+    [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
-      this->handle_init(request, response, channel);
+      this->handle_init(request, response);
     });
 
   handle_halt_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/halt",
-    [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+    [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
-      this->handle_halt(request, response, channel);
+      this->handle_halt(request, response);
     });
 
   handle_recover_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/recover",
-    [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+    [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
-      this->handle_recover(request, response, channel);
+      this->handle_recover(request, response);
     });
 
   handle_set_target_service =
     this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
     "~/" + joint_name + "/target",
-    [this, channel](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+    [this](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
     canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
-      this->handle_set_target(request, response, channel);
+      this->handle_set_target(request, response);
     });
 }
 
 template<>
 void NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(
-  const std::string & joint_name,
-  uint8_t channel)
+  const std::string & joint_name)
 {
   publish_joint_state =
     this->node_->create_publisher<sensor_msgs::msg::JointState>(
@@ -104,31 +101,31 @@ void NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>::setupRosInterf
 
   handle_init_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/init",
-    [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+    [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
-      this->handle_init(request, response, channel);
+      this->handle_init(request, response);
     });
 
   handle_halt_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/halt",
-    [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+    [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
-      this->handle_halt(request, response, channel);
+      this->handle_halt(request, response);
     });
 
   handle_recover_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/recover",
-    [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+    [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
-      this->handle_recover(request, response, channel);
+      this->handle_recover(request, response);
     });
 
   handle_set_target_service =
     this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
     "~/" + joint_name + "/target",
-    [this, channel](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+    [this](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
     canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
-      this->handle_set_target(request, response, channel);
+      this->handle_set_target(request, response);
     });
 }
 
@@ -178,14 +175,12 @@ void NodeCanopenPreMappedDriver<NODETYPE>::poll_timer_callback()
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::publish()
 {
-  for (const auto & motor : motors_) {
-    sensor_msgs::msg::JointState js_msg;
-    js_msg.name.push_back(motor.second->getJointName());
-    js_msg.position.push_back(motor.second->get_position());
-    js_msg.velocity.push_back(motor.second->get_speed());
-    js_msg.effort.push_back(0.0);
-    publish_joint_state->publish(js_msg);
-  }
+  sensor_msgs::msg::JointState js_msg;
+  js_msg.name.push_back(motor_->getJointName());
+  js_msg.position.push_back(motor_->get_position());
+  js_msg.velocity.push_back(motor_->get_speed());
+  js_msg.effort.push_back(0.0);
+  publish_joint_state->publish(js_msg);
 }
 
 template<class NODETYPE>
@@ -197,7 +192,7 @@ void NodeCanopenPreMappedDriver<NODETYPE>::add_to_master()
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::handle_init(
   const std_srvs::srv::Trigger::Request::SharedPtr request,
-  std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
+  std_srvs::srv::Trigger::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
   }
@@ -206,8 +201,7 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_init(
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::handle_recover(
   const std_srvs::srv::Trigger::Request::SharedPtr request,
-  std_srvs::srv::Trigger::Response::SharedPtr response,
-  uint8_t channel)
+  std_srvs::srv::Trigger::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
   }
@@ -215,30 +209,23 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_recover(
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::handle_halt(
   const std_srvs::srv::Trigger::Request::SharedPtr request,
-  std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
+  std_srvs::srv::Trigger::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
   }
-}
-template<class NODETYPE>
-void NodeCanopenPreMappedDriver<NODETYPE>::handle_set_operation_mode(
-  const std_srvs::srv::Trigger::Request::SharedPtr request,
-  std_srvs::srv::Trigger::Response::SharedPtr response,
-  uint8_t channel, uint16_t mode)
-{
 }
 
 template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::handle_set_target(
   const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-  canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response, uint8_t channel)
+  canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
   }
 }
 
 template<class NODETYPE>
-bool NodeCanopenPreMappedDriver<NODETYPE>::init_motor(uint8_t channel)
+bool NodeCanopenPreMappedDriver<NODETYPE>::init_motor()
 {
   if (this->activated_.load()) {
     return true;
@@ -249,7 +236,7 @@ bool NodeCanopenPreMappedDriver<NODETYPE>::init_motor(uint8_t channel)
 }
 
 template<class NODETYPE>
-bool NodeCanopenPreMappedDriver<NODETYPE>::recover_motor(uint8_t channel)
+bool NodeCanopenPreMappedDriver<NODETYPE>::recover_motor()
 {
   if (this->activated_.load()) {
     return true;
@@ -259,7 +246,7 @@ bool NodeCanopenPreMappedDriver<NODETYPE>::recover_motor(uint8_t channel)
 }
 
 template<class NODETYPE>
-bool NodeCanopenPreMappedDriver<NODETYPE>::halt_motor(uint8_t channel)
+bool NodeCanopenPreMappedDriver<NODETYPE>::halt_motor()
 {
   if (this->activated_.load()) {
     return true;
@@ -269,23 +256,7 @@ bool NodeCanopenPreMappedDriver<NODETYPE>::halt_motor(uint8_t channel)
 }
 
 template<class NODETYPE>
-bool NodeCanopenPreMappedDriver<NODETYPE>::set_operation_mode(uint8_t channel, uint16_t mode)
-{
-  if (this->activated_.load()) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
-template<class NODETYPE>
-bool NodeCanopenPreMappedDriver<NODETYPE>::set_default_operation_mode(uint8_t channel)
-{
-  return true;
-}
-
-template<class NODETYPE>
-bool NodeCanopenPreMappedDriver<NODETYPE>::set_target(uint8_t channel, double target)
+bool NodeCanopenPreMappedDriver<NODETYPE>::set_target(double target, uint8_t rollover)
 {
   if (this->activated_.load()) {
     return true;
@@ -298,53 +269,6 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::diagnostic_callback(
   diagnostic_updater::DiagnosticStatusWrapper & stat)
 {
-//   unsigned char summary_level = diagnostic_msgs::msg::DiagnosticStatus::OK;
-//   std::string summary_msg = "";
-
-//   for (const auto & motor : motors_) {
-//     motor.second->handleDiag();
-
-//     if (this->diagnostic_collector_->getLevel() >= summary_level) {
-//       summary_level = this->diagnostic_collector_->getLevel();
-//       summary_msg = motor.second->getJointName() + ": " + this->diagnostic_collector_->getMessage();
-//     }
-
-//     stat.add(
-//       motor.second->getJointName() + "_device_state",
-//       this->diagnostic_collector_->getValue("DEVICE"));
-//     stat.add(
-//       motor.second->getJointName() + "_nmt_state",
-//       this->diagnostic_collector_->getValue("NMT"));
-//     stat.add(
-//       motor.second->getJointName() + "_emcy_state",
-//       this->diagnostic_collector_->getValue("EMCY"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_mode",
-//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_mode"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_set_mode",
-//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_mode"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_state",
-//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_state"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_set_state",
-//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_set_state",
-//       this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_set_state"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_is_initialized",
-//       this->diagnostic_collector_->getValue(
-//         motor.second->getJointName() +
-//         "_cia402_is_initialized"));
-//     stat.add(
-//       motor.second->getJointName() + "_cia402_has_communication_failure",
-//       this->diagnostic_collector_->getValue(
-//         motor.second->getJointName() +
-//         "_cia402_has_communication_failure"));
-//   }
-//   stat.summary(summary_level, summary_msg);
 }
 
 #endif

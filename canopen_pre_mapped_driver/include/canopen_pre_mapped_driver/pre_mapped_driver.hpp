@@ -70,81 +70,66 @@ public:
     node_canopen_pre_mapped_driver_->register_rpdo_cb(rpdo_cb);
   }
 
-  double get_speed(uint8_t channel)
+  double get_speed()
   {
-    return node_canopen_pre_mapped_driver_->get_speed(channel);
+    return node_canopen_pre_mapped_driver_->get_speed();
   }
 
-  double get_position(uint8_t channel)
+  double get_position()
   {
-    return node_canopen_pre_mapped_driver_->get_position(channel);
+    return node_canopen_pre_mapped_driver_->get_position();
   }
 
-  bool set_target(uint8_t channel, double target)
+  bool set_target(double target, uint8_t rollover)
   {
-    return node_canopen_pre_mapped_driver_->set_target(channel, target);
+    return node_canopen_pre_mapped_driver_->set_target(target, rollover);
   }
 
-  bool init_motor(uint8_t channel)
+  bool init_motor()
   {
-    return node_canopen_pre_mapped_driver_->init_motor(channel);
+    return node_canopen_pre_mapped_driver_->init_motor();
   }
 
-  bool recover_motor(uint8_t channel)
+  bool recover_motor()
   {
-    return node_canopen_pre_mapped_driver_->recover_motor(channel);
+    return node_canopen_pre_mapped_driver_->recover_motor();
   }
 
-  bool is_motor_faulty(uint8_t channel)
+  bool is_motor_faulty()
   {
-    return node_canopen_pre_mapped_driver_->is_motor_faulty(channel);
+    return node_canopen_pre_mapped_driver_->is_motor_faulty();
   }
 
-  bool is_motor_initialized(uint8_t channel)
+  bool is_motor_initialized()
   {
-    return node_canopen_pre_mapped_driver_->is_motor_initialized(channel);
+    return node_canopen_pre_mapped_driver_->is_motor_initialized();
   }
 
-  bool has_motor_communication_failure(uint8_t channel)
+  bool has_motor_communication_failure()
   {
-    return node_canopen_pre_mapped_driver_->has_motor_communication_failure(channel);
+    return node_canopen_pre_mapped_driver_->has_motor_communication_failure();
   }
 
-  bool is_motor_halted(uint8_t channel)
+  bool is_motor_halted()
   {
-    return node_canopen_pre_mapped_driver_->is_motor_halted(channel);
+    return node_canopen_pre_mapped_driver_->is_motor_halted();
   }
 
-  bool halt_motor(uint8_t channel)
+  bool halt_motor()
   {
-    return node_canopen_pre_mapped_driver_->halt_motor(channel);
+    return node_canopen_pre_mapped_driver_->halt_motor();
   }
 
-  uint16_t get_mode(uint8_t channel)
+  uint16_t get_mode()
   {
-    return node_canopen_pre_mapped_driver_->get_mode(channel);
+    return node_canopen_pre_mapped_driver_->get_mode();
   }
 
-  bool set_operation_mode(uint8_t channel, uint16_t mode)
+  const std::string & get_motor_joint_name()
   {
-    return node_canopen_pre_mapped_driver_->set_operation_mode(channel, mode);
-  }
-
-  bool set_default_operation_mode(uint8_t channel)
-  {
-    return node_canopen_pre_mapped_driver_->set_default_operation_mode(channel);
-  }
-
-  const std::vector<uint8_t> & get_available_motor_channels()
-  {
-    return node_canopen_pre_mapped_driver_->get_available_motor_channels();
-  }
-
-  const std::string & get_motor_joint_name(uint8_t channel)
-  {
-    return node_canopen_pre_mapped_driver_->get_motor_joint_name(channel);
+    return node_canopen_pre_mapped_driver_->get_motor_joint_name();
   }
 };
 }  // namespace ros2_canopen
 
-#endif  // CANOPEN_402_DRIVER__CANOPEN_402_DRIVER_HPP_
+#endif  // CANOPEN_PRE_MAPPED_DRIVER__PRE_MAPPED_DRIVER_HPP_

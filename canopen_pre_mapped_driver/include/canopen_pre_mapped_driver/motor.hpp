@@ -35,10 +35,10 @@
 
 namespace ros2_canopen
 {
-class Motor402
+class PreMappedMotor
 {
 public:
-  Motor402(
+  PreMappedMotor(
     std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
     std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev,
     double scale_vel_to_dev,
@@ -59,8 +59,8 @@ public:
   }
 
   virtual bool setTarget(double val);
-  virtual bool enterModeAndWait(uint16_t mode);
-  virtual bool isModeSupported(uint16_t mode);
+  // virtual bool enterModeAndWait(uint16_t mode);
+  // virtual bool isModeSupported(uint16_t mode);
   virtual uint16_t getMode();
   bool readState();
 

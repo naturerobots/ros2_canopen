@@ -40,8 +40,7 @@ class NodeCanopenPreMappedDriver : public NodeCanopenProxyDriver<NODETYPE>
     "NODETYPE must derive from rclcpp::Node or rclcpp_lifecycle::LifecycleNode");
 
 protected:
-  std::map<uint8_t, std::shared_ptr<Motor402>> motors_;  // map from channel to motor
-  std::vector<uint8_t> motor_channels_;                  // list of all registered motor channels
+  std::shared_ptr<PreMappedMotor> motor_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_init_service;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_halt_service;
@@ -56,7 +55,7 @@ protected:
 public:
   NodeCanopenPreMappedDriver(NODETYPE * node);
 
-  void setupRosInterfaces(const std::string & joint_name, uint8_t channel);
+  void setupRosInterfaces(const std::string & joint_name);
 
   virtual void init(bool called_from_base) override;
   virtual void configure(bool called_from_base) override;
@@ -64,49 +63,44 @@ public:
   virtual void deactivate(bool called_from_base) override;
   virtual void add_to_master() override;
 
-  virtual bool is_motor_faulty(uint8_t channel)
+  virtual bool is_motor_faulty()
   {
-    return motors_[channel]->isFaulty();
+    return motor_->isFaulty();
   }
 
-  virtual bool is_motor_initialized(uint8_t channel)
+  virtual bool is_motor_initialized()
   {
-    return motors_[channel]->isInitialized();
+    return motor_->isInitialized();
   }
 
-  virtual bool has_motor_communication_failure(uint8_t channel)
+  virtual bool has_motor_communication_failure()
   {
-    return motors_[channel]->hasCommunicationFailure();
+    return motor_->hasCommunicationFailure();
   }
 
-  virtual bool is_motor_halted(uint8_t channel)
+  virtual bool is_motor_halted()
   {
-    return motors_[channel]->isHalted();
+    return motor_->isHalted();
   }
 
-  virtual double get_speed(uint8_t channel)
+  virtual double get_speed()
   {
-    return motors_[channel]->get_speed();
+    return motor_->get_speed();
   }
 
-  virtual double get_position(uint8_t channel)
+  virtual double get_position()
   {
-    return motors_[channel]->get_position();
+    return motor_->get_position();
   }
 
-  virtual uint16_t get_mode(uint8_t channel)
+  virtual uint16_t get_mode()
   {
-    return motors_[channel]->getMode();
+    return motor_->getMode();
   }
 
-  const std::vector<uint8_t> & get_available_motor_channels()
+  const std::string & get_motor_joint_name()
   {
-    return motor_channels_;
-  }
-
-  const std::string & get_motor_joint_name(uint8_t channel)
-  {
-    return motors_[channel]->getJointName();
+    return motor_->getJointName();
   }
 
   /**
@@ -120,7 +114,7 @@ public:
    */
   void handle_init(
     const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
+    std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Method to initialise device
@@ -133,7 +127,7 @@ public:
    * @return  bool
    * Indicates initialisation procedure result
    */
-  bool init_motor(uint8_t channel);
+  bool init_motor();
 
   /**
    * @brief Service Callback to recover device
@@ -146,7 +140,7 @@ public:
    */
   void handle_recover(
     const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
+    std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Method to recover device
@@ -158,7 +152,7 @@ public:
    *
    * @return bool
    */
-  bool recover_motor(uint8_t channel);
+  bool recover_motor();
 
   /**
    * @brief Service Callback to halt device
@@ -172,7 +166,7 @@ public:
    */
   void handle_halt(
     const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
+    std_srvs::srv::Trigger::Response::SharedPtr response);
 
   /**
    * @brief Method to halt device
@@ -185,45 +179,7 @@ public:
    *
    * @return bool
    */
-  bool halt_motor(uint8_t channel);
-
-  /**
-   * @brief Method to set desired mode
-   *
-   * Calls Motor402::enterModeAndWait with desired Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to desired Mode.
-   *
-   * @param [in] void
-   * @param [out] bool
-   */
-  bool set_operation_mode(uint8_t channel, uint16_t mode);
-
-  /**
-   * @brief Method to set default mode
-   *
-   * Calls Motor402::enterModeAndWait with default Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to default Mode.
-   *
-   * @param [in] void
-   * @param [out] bool
-   */
-  bool set_default_operation_mode(uint8_t channel);
-
-  /**
-   * @brief Service Callback to set desired mode
-   *
-   * Calls Motor402::enterModeAndWait with desired Mode as
-   * Target Operation Mode. If successful, the motor was transitioned
-   * to desired Mode.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_operation_mode(
-    const std_srvs::srv::Trigger::Request::SharedPtr request,
-    std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel, uint16_t mode);
+  bool halt_motor();
 
   /**
    * @brief Service Callback to set target
@@ -237,7 +193,7 @@ public:
    */
   void handle_set_target(
     const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response, uint8_t channel);
+    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response);
 
   /**
    * @brief Method to set target
@@ -250,7 +206,7 @@ public:
    *
    * @return bool
    */
-  bool set_target(uint8_t channel, double target);
+  bool set_target(double target, uint8_t rollover);
 };
 }  // namespace node_interfaces
 }  // namespace ros2_canopen

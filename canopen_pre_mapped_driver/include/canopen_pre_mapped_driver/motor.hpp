@@ -29,6 +29,7 @@
 #include <thread>
 #include "rclcpp/rclcpp.hpp"
 
+#include "canopen_pre_mapped_driver/target_helper.hpp"
 #include "canopen_pre_mapped_driver/mode_forward_helper.hpp"
 #include "canopen_base_driver/diagnostic_collector.hpp"
 #include "canopen_base_driver/lely_driver_bridge.hpp"
@@ -56,6 +57,7 @@ public:
     , has_communication_failure_(false)
   {
     this->driver = driver;
+    this->target_helper_ = std::make_shared<TargetHelper>(driver);
   }
 
   virtual bool setTarget(double val);
@@ -222,6 +224,8 @@ private:
   std::atomic<State402::InternalState> target_state_;
 
   State402 state_handler_;
+
+  std::shared_ptr<TargetHelper> target_helper_;
 
   ModeSharedPtr selected_mode_;
   uint16_t mode_id_;

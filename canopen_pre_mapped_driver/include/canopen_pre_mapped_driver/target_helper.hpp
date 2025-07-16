@@ -45,10 +45,12 @@ public:
     has_target_ = false;
   }
 
-  virtual bool write()
+  virtual bool write(uint8_t rollover)
   {
     if (has_target_) {
+      // Is this the correct way to write the target in combination with the rollover counter?
       driver->universal_set_value<int32_t>(0x60FF, 0, this->target_);
+      driver->universal_set_value<uint8_t>(0x382A, 0, rollover);
       return true;
     } else {
       return false;

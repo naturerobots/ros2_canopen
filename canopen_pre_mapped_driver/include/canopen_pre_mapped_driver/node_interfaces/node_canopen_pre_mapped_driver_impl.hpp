@@ -133,6 +133,20 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::configure(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::configure(false);
+  RCLCPP_INFO_STREAM(this->node_->get_logger(), "CONFIGURE");
+
+
+  // motor_ =
+  //   std::make_shared<Motor402>(
+  //   nullptr,
+  //   (ros2_canopen::State402::InternalState)switching_state.value_or(
+  //     (int)ros2_canopen::State402::InternalState::Operation_Enable),
+  //   joint_name.value(), scale_pos_to_dev.value_or(1000.0),
+  //   scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
+  //   scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0));
+
+  // create publishers and subscribers
+  // setupRosInterfaces(joint_name.value());
 }
 
 template<class NODETYPE>
@@ -259,8 +273,14 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::set_target(double target, uint8_t rollover)
 {
   if (this->activated_.load()) {
-    return true;
+    if (motor_) {
+      return motor_->setTarget(target);
+    } else {
+      RCLCPP_WARN(this->node_->get_logger(), "Motor is not initialized. Cannot set target.");
+      return false;
+    }
   } else {
+    RCLCPP_WARN(this->node_->get_logger(), "Driver is not activated. Cannot set target.");
     return false;
   }
 }

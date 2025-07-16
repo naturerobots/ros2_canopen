@@ -131,7 +131,7 @@ hardware_interface::return_type FuroPreMappedSystem::write(
   for (auto it = drivers.begin(); it != drivers.end(); ++it) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver != nullptr && motor_running_) {
-      pre_mapped_driver->set_target(rollover, 0.0);
+      pre_mapped_driver->set_target(0.0, rollover);
     }
   }
   rollover++;

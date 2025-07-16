@@ -21,9 +21,8 @@ using namespace ros2_canopen;
 
 bool PreMappedMotor::setTarget(double val)
 {
-  if (state_handler_.getState() == State402::Operation_Enable) {
-    auto target = val * scale_vel_to_dev_;
-    return selected_mode_ && selected_mode_->setTarget(target);
+  if (target_helper_) {
+    return target_helper_->setTarget(val);
   }
   return false;
 }

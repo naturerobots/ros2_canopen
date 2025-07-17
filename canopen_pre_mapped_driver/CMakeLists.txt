@@ -32,7 +32,6 @@ set(dependencies
 
 add_library(lely_pre_mapped_controller_bridge
   src/motor.cpp
-  src/state.cpp
 )
 target_compile_features(lely_pre_mapped_controller_bridge PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_compile_options(lely_pre_mapped_controller_bridge PUBLIC -Wl,--no-undefined)

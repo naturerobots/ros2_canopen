@@ -120,11 +120,6 @@ public:
     return node_canopen_pre_mapped_driver_->halt_motor();
   }
 
-  uint16_t get_mode()
-  {
-    return node_canopen_pre_mapped_driver_->get_mode();
-  }
-
   const std::string & get_motor_joint_name()
   {
     return node_canopen_pre_mapped_driver_->get_motor_joint_name();

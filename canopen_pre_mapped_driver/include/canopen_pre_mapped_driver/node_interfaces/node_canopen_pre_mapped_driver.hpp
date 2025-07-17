@@ -93,11 +93,6 @@ public:
     return motor_->get_position();
   }
 
-  virtual uint16_t get_mode()
-  {
-    return motor_->getMode();
-  }
-
   const std::string & get_motor_joint_name()
   {
     return motor_->getJointName();

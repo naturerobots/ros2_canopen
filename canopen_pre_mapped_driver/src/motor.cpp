@@ -19,17 +19,12 @@
 #include "canopen_pre_mapped_driver/motor.hpp"
 using namespace ros2_canopen;
 
-bool PreMappedMotor::setTarget(double val)
+bool PreMappedMotor::setTarget(double val, uint8_t rollover)
 {
   if (target_helper_) {
-    return target_helper_->setTarget(val);
+    return target_helper_->setTarget(val, rollover);
   }
   return false;
-}
-
-uint16_t PreMappedMotor::getMode()
-{
-  return selected_mode_->mode_id_;
 }
 
 bool PreMappedMotor::readState()
@@ -37,30 +32,9 @@ bool PreMappedMotor::readState()
   if (this->driver == nullptr || this->status_word_entry_index == 0 || op_mode_display_index == 0) {
     return false;
   }
-
   try {
     uint16_t sw = driver->universal_get_value<uint16_t>(status_word_entry_index, 0x0);    // TODO: added error handling
     status_word_.exchange(sw);
-
-    state_handler_.read(sw);
-
-    uint16_t new_mode;
-    new_mode = driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);
-    // RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode %hhi",new_mode);
-
-    if (selected_mode_ && selected_mode_->mode_id_ == new_mode) {
-      if (!selected_mode_->read(sw)) {
-        RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode handler has error.");
-      }
-    }
-    if (new_mode != mode_id_) {
-      mode_id_ = new_mode;
-      mode_cond_.notify_all();
-    }
-    if (selected_mode_ && selected_mode_->mode_id_ != new_mode) {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode does not match.");
-    }
-
     // communication worked well
     has_communication_failure_ = false;
   } catch (std::runtime_error & e) {
@@ -78,94 +52,18 @@ void PreMappedMotor::handleRead()
 
 void PreMappedMotor::handleWrite()
 {
-  if (this->driver == nullptr || this->control_word_entry_index == 0) {
+  if (this->driver == nullptr) {
     return;
   }
-  if (state_handler_.getState() == State402::Operation_Enable) {
-  } else {
-  }
+  target_helper_->write();
 }
 void PreMappedMotor::handleDiag()
 {
-  uint16_t sw = status_word_;
-  State402::InternalState state = state_handler_.getState();
-  uint16_t mode = getMode();
-  this->diag_collector_->addf(joint_name_ + "_cia402_mode", "%i", mode);
-
-  switch (state) {
-    case State402::Not_Ready_To_Switch_On:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Not ready to switch on");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::WARN,
-        "Not ready to switch on");
-      initialized_ = false;
-      break;
-    case State402::Switch_On_Disabled:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switch on disabled");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::WARN,
-        "Switch on disabled");
-      initialized_ = false;
-      break;
-    case State402::Ready_To_Switch_On:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Ready to switch on");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::OK,
-        "Ready to switch on");
-      initialized_ = false;
-      break;
-    case State402::Switched_On:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switched on");
-      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Switched on");
-      initialized_ = false;
-      break;
-    case State402::Operation_Enable:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Operation enabled");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::OK,
-        "Operation enabled");
-      break;
-    case State402::Quick_Stop_Active:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Quick stop active");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::WARN,
-        "Quick stop active");
-      break;
-    case State402::Fault:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Fault");
-      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Fault");
-      break;
-    case State402::Fault_Reaction_Active:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Fault reaction active");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-        "Fault reaction active");
-      break;
-    case State402::Unknown:
-      this->diag_collector_->addf(joint_name_ + "_cia402_state", "Unknown state");
-      this->diag_collector_->summary(
-        diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-        "Unknown state");
-      initialized_ = false;
-      break;
-  }
-
-  if (sw & (1 << State402::SW_Warning)) {
-    this->diag_collector_->addf(joint_name_ + "_cia402_state", "Warning bit is set");
-    this->diag_collector_->summary(
-      diagnostic_msgs::msg::DiagnosticStatus::WARN,
-      "Warning bit is set");
-  }
-  if (sw & (1 << State402::SW_Internal_limit)) {
-    this->diag_collector_->addf(joint_name_ + "_cia402_state", "Internal limit active");
-    this->diag_collector_->summary(
-      diagnostic_msgs::msg::DiagnosticStatus::WARN,
-      "Internal limit active");
-  }
-
-  this->diag_collector_->addf(joint_name_ + "_cia402_is_initialized", "%i", (int)initialized_);
   this->diag_collector_->addf(
-    joint_name_ + "_cia402_has_communication_failure", "%i",
+    joint_name_ + "_pre_mapped_motor_is_initialized", "%i",
+    (int)initialized_);
+  this->diag_collector_->addf(
+    joint_name_ + "_pre_mapped_motor_has_communication_failure", "%i",
     (int)has_communication_failure_);
 
   if (has_communication_failure_) {
@@ -209,32 +107,26 @@ bool PreMappedMotor::handleShutdown()
 
 bool PreMappedMotor::handleHalt()
 {
-  State402::InternalState state = state_handler_.getState();
-
-  // do not demand quickstop in case of fault
-  if (state == State402::Fault_Reaction_Active || state == State402::Fault) {
-    return false;
-  }
+  RCLCPP_WARN_ONCE(
+    rclcpp::get_logger("canopen_402_driver"),
+    "Handle halt is not implemented in PreMappedMotor. Nothing will happen.");
   return true;
 }
+
 bool PreMappedMotor::handleRecover()
 {
   start_fault_reset_ = true;
-  {
-    if (selected_mode_ && !selected_mode_->start()) {
-      std::cout << "Could not restart mode." << std::endl;
-      return false;
-    }
-  }
+  RCLCPP_WARN_ONCE(
+    rclcpp::get_logger("canopen_402_driver"),
+    "Handle recover is not implemented in PreMappedMotor. Nothing will happen.");
   return true;
 }
 
 bool PreMappedMotor::isFaulty()
 {
-  State402::InternalState state = state_handler_.getState();
-  if (state != State402::Operation_Enable && state != State402::Quick_Stop_Active) {
-    return true;
-  }
+  RCLCPP_WARN_ONCE(
+    rclcpp::get_logger("canopen_402_driver"),
+    "Handle 'isFaulty' is not implemented in PreMappedMotor. No fault state is tracked.");
   return false;
 }
 
@@ -250,9 +142,8 @@ bool PreMappedMotor::isInitialized()
 
 bool PreMappedMotor::isHalted()
 {
-  State402::InternalState state = state_handler_.getState();
-  if (state == State402::Quick_Stop_Active) {
-    return true;
-  }
+  RCLCPP_WARN_ONCE(
+    rclcpp::get_logger("canopen_402_driver"),
+    "Handle 'isHalted' is not implemented in PreMappedMotor. No halt state is tracked.");
   return false;
 }

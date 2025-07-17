@@ -30,7 +30,6 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "canopen_pre_mapped_driver/target_helper.hpp"
-#include "canopen_pre_mapped_driver/mode_forward_helper.hpp"
 #include "canopen_base_driver/diagnostic_collector.hpp"
 #include "canopen_base_driver/lely_driver_bridge.hpp"
 
@@ -56,10 +55,7 @@ public:
     this->target_helper_ = std::make_shared<TargetHelper>(driver);
   }
 
-  virtual bool setTarget(double val);
-  // virtual bool enterModeAndWait(uint16_t mode);
-  // virtual bool isModeSupported(uint16_t mode);
-  virtual uint16_t getMode();
+  virtual bool setTarget(double val, uint8_t rollover);
   bool readState();
 
   const std::string & getJointName() const
@@ -209,13 +205,9 @@ private:
   std::atomic<uint16_t> status_word_;
   uint16_t control_word_;
   std::atomic<bool> start_fault_reset_;
-  std::atomic<State402::InternalState> target_state_;
-
-  State402 state_handler_;
 
   std::shared_ptr<TargetHelper> target_helper_;
 
-  ModeSharedPtr selected_mode_;
   uint16_t mode_id_;
   std::condition_variable mode_cond_;
   const bool monitor_mode_;

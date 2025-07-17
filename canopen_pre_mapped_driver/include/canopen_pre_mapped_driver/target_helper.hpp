@@ -35,6 +35,7 @@ namespace ros2_canopen
 class TargetHelper
 {
   double target_;
+  uint8_t rollover_;  // rollover counter
   std::atomic<bool> has_target_;
   std::shared_ptr<LelyDriverBridge> driver;
 
@@ -45,22 +46,22 @@ public:
     has_target_ = false;
   }
 
-  virtual bool write(uint8_t rollover)
+  virtual bool write()
   {
     if (has_target_) {
       // Is this the correct way to write the target in combination with the rollover counter?
       driver->universal_set_value<int32_t>(0x60FF, 0, this->target_);
-      driver->universal_set_value<uint8_t>(0x382A, 0, rollover);
+      driver->universal_set_value<uint8_t>(0x382A, 0, this->rollover_);
       RCLCPP_INFO(
         rclcpp::get_logger("canopen_402_target"),
-        "Target command set to %f with rollover counter %d", this->target_, rollover);
+        "Target command set to %f with rollover counter %d", this->target_, this->rollover_);
       return true;
     } else {
       return false;
     }
   }
 
-  virtual bool setTarget(const double & val)
+  virtual bool setTarget(const double & val, uint8_t rollover)
   {
     if (std::isnan(val)) {
       RCLCPP_ERROR(rclcpp::get_logger("canopen_402_target"), "Target command is not a number");

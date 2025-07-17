@@ -316,7 +316,7 @@ bool NodeCanopenPreMappedDriver<NODETYPE>::set_target(double target, uint8_t rol
 {
   if (this->activated_.load()) {
     if (motor_) {
-      return motor_->setTarget(target);
+      return motor_->setTarget(target, rollover);
     } else {
       RCLCPP_WARN(this->node_->get_logger(), "Motor is not initialized. Cannot set target.");
       return false;

@@ -52,7 +52,6 @@ public:
     , has_communication_failure_(false)
   {
     this->driver = driver;
-    this->target_helper_ = std::make_shared<TargetHelper>(driver);
   }
 
   virtual bool setTarget(double val, uint8_t rollover);
@@ -66,6 +65,7 @@ public:
   void setDriver(std::shared_ptr<LelyDriverBridge> driver)
   {
     this->driver = driver;
+    this->target_helper_ = std::make_shared<TargetHelper>(driver);
   }
 
   /**

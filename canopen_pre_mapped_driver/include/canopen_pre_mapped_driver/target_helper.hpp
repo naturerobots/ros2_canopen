@@ -34,24 +34,24 @@ namespace ros2_canopen
 
 class TargetHelper
 {
-  double target_;
+  int32_t target_;
   uint8_t rollover_;  // rollover counter
   std::atomic<bool> has_target_;
-  std::shared_ptr<LelyDriverBridge> driver;
+  std::shared_ptr<LelyDriverBridge> driver_;
 
 public:
   TargetHelper(std::shared_ptr<LelyDriverBridge> driver)
   {
-    this->driver = driver;
+    this->driver_ = driver;
     has_target_ = false;
   }
 
   virtual bool write()
   {
-    if (has_target_) {
+    if (has_target_ && this->driver_) {
       // Is this the correct way to write the target in combination with the rollover counter?
-      driver->universal_set_value<int32_t>(0x60FF, 0, this->target_);
-      driver->universal_set_value<uint8_t>(0x382A, 0, this->rollover_);
+      driver_->universal_set_value<int32_t>(0x60FF, 0, this->target_);
+      driver_->universal_set_value<uint8_t>(0x382A, 0, this->rollover_);
       // RCLCPP_INFO(
       //   rclcpp::get_logger("canopen_402_target"),
       //   "Target command set to %f with rollover counter %d", this->target_, this->rollover_);
@@ -71,7 +71,6 @@ public:
     using boost::numeric_cast;
     using boost::numeric::negative_overflow;
     using boost::numeric::positive_overflow;
-
     try {
       target_ = numeric_cast<int32_t>(val);
     } catch (negative_overflow &) {
@@ -86,7 +85,7 @@ public:
       std::cout << "canopen_402 Was not able to cast command " << val << std::endl;
       return false;
     }
-
+    rollover_ = rollover;
     has_target_ = true;
     return true;
   }

@@ -38,10 +38,60 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_init(
   return CallbackReturn::SUCCESS;
 }
 
+void FuroPreMappedSystem::initDeviceContainer()
+{
+  std::string tmp_master_bin = (info_.hardware_parameters["master_bin"] == "\"\"") ?
+    "" :
+    info_.hardware_parameters["master_bin"];
+
+  device_container_->init(
+    info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
+    info_.hardware_parameters["bus_config"], tmp_master_bin);
+  auto drivers = device_container_->get_registered_drivers();
+  RCLCPP_INFO(kLogger, "Number of registered drivers: '%zu'", device_container_->count_drivers());
+
+  for (auto it = drivers.begin(); it != drivers.end(); it++) {
+    auto proxy_driver = std::static_pointer_cast<ros2_canopen::ProxyDriver>(it->second);
+
+    canopen_data_[it->first] = CanopenNodeData();
+
+    auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id)
+      {canopen_data_[id].nmt_state.set_state(nmt_state);};
+    // register callback
+    proxy_driver->register_nmt_state_cb(nmt_state_cb);
+
+    auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id)
+      {canopen_data_[id].rpdo_data.set_data(data);};
+    // register callback
+    proxy_driver->register_rpdo_cb(rpdo_cb);
+
+    RCLCPP_INFO(
+      kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",  //
+      it->second->get_node_base_interface()->get_name(), it->first);
+  }
+
+  RCLCPP_INFO(device_container_->get_logger(), "Initialisation successful.");
+}
+
 hardware_interface::CallbackReturn FuroPreMappedSystem::on_configure(
   const rclcpp_lifecycle::State & previous_state)
 {
-  return CanopenSystem::on_configure(previous_state);
+  executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+  device_container_ = std::make_shared<ros2_canopen::DeviceContainer>(executor_);
+  executor_->add_node(device_container_);
+
+  // threads
+  spin_thread_ = std::make_unique<std::thread>(&FuroPreMappedSystem::spin, this);
+  init_thread_ = std::make_unique<std::thread>(&FuroPreMappedSystem::initDeviceContainer, this);
+
+  // actually wait for init phase to end
+  if (init_thread_->joinable()) {
+    init_thread_->join();
+  } else {
+    RCLCPP_ERROR(kLogger, "Could not join init thread!");
+    return CallbackReturn::ERROR;
+  }
+  return CallbackReturn::SUCCESS;
 }
 
 std::vector<hardware_interface::StateInterface> FuroPreMappedSystem::export_state_interfaces()
@@ -134,7 +184,7 @@ hardware_interface::return_type FuroPreMappedSystem::write(
 
       auto joint_name = pre_mapped_driver->get_motor_joint_name();
       auto target_velocity = motor_data_[joint_name].target_velocity;
-      // pre_mapped_driver->set_target(target_velocity, rollover);
+      pre_mapped_driver->set_target(target_velocity, rollover);
     }
   }
   rollover++;

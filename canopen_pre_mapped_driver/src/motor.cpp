@@ -29,19 +29,16 @@ bool PreMappedMotor::setTarget(double val, uint8_t rollover)
 
 bool PreMappedMotor::readState()
 {
-  if (this->driver == nullptr || this->status_word_entry_index == 0 || op_mode_display_index == 0) {
+  if (this->driver == nullptr) {
     return false;
   }
   try {
-    uint16_t sw = driver->universal_get_value<uint16_t>(status_word_entry_index, 0x0);    // TODO: added error handling
-    status_word_.exchange(sw);
     // communication worked well
     has_communication_failure_ = false;
   } catch (std::runtime_error & e) {
     // communication was unsuccessful
     has_communication_failure_ = true;
   }
-
   return true;
 }
 
@@ -52,11 +49,12 @@ void PreMappedMotor::handleRead()
 
 void PreMappedMotor::handleWrite()
 {
-  if (this->driver == nullptr) {
+  if (this->driver == nullptr || this->isHalted()) {
     return;
   }
   target_helper_->write();
 }
+
 void PreMappedMotor::handleDiag()
 {
   this->diag_collector_->addf(
@@ -81,12 +79,8 @@ void PreMappedMotor::handleDiag()
 
 bool PreMappedMotor::handleInit()
 {
-
   status_word_entry_index = 0x6041;
   control_word_entry_index = 0x6040;
-  op_mode_index = 0x6060;
-  op_mode_display_index = 0x6061;
-  supported_drive_modes_index = 0x6502;
   speed_feedback_index = 0x606C;
   position_feedback_index = 0x6064;
 
@@ -98,18 +92,25 @@ bool PreMappedMotor::handleInit()
   start_fault_reset_ = true;
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
   initialized_ = true;
+  this->activate();
   return true;
 }
+
 bool PreMappedMotor::handleShutdown()
 {
+  is_halted_ = true;
+  return true;
+}
+
+bool PreMappedMotor::activate()
+{
+  is_halted_ = false;
   return true;
 }
 
 bool PreMappedMotor::handleHalt()
 {
-  RCLCPP_WARN_ONCE(
-    rclcpp::get_logger("canopen_402_driver"),
-    "Handle halt is not implemented in PreMappedMotor. Nothing will happen.");
+  is_halted_ = true;
   return true;
 }
 
@@ -142,8 +143,5 @@ bool PreMappedMotor::isInitialized()
 
 bool PreMappedMotor::isHalted()
 {
-  RCLCPP_WARN_ONCE(
-    rclcpp::get_logger("canopen_402_driver"),
-    "Handle 'isHalted' is not implemented in PreMappedMotor. No halt state is tracked.");
-  return false;
+  return is_halted_;
 }

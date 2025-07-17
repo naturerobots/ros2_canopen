@@ -81,13 +81,6 @@ void NodeCanopenPreMappedDriver<rclcpp::Node>::setupRosInterfaces(const std::str
       this->handle_recover(request, response);
     });
 
-  handle_set_target_service =
-    this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
-    "~/" + joint_name + "/target",
-    [this](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
-      this->handle_set_target(request, response);
-    });
 }
 
 template<>
@@ -118,14 +111,6 @@ void NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>::setupRosInterf
     [this](const std_srvs::srv::Trigger::Request::SharedPtr request,
     std_srvs::srv::Trigger::Response::SharedPtr response) {
       this->handle_recover(request, response);
-    });
-
-  handle_set_target_service =
-    this->node_->create_service<canopen_interfaces::srv::COTargetDouble>(
-    "~/" + joint_name + "/target",
-    [this](const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
-      this->handle_set_target(request, response);
     });
 }
 
@@ -214,6 +199,8 @@ void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
       "Could not activate driver because lely communication is not available.");
   }
   this->start_node_nmt_command();
+  this->motor_->activate();
+  // this->motor_->handleInit();
 }
 
 template<class NODETYPE>
@@ -226,6 +213,11 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::poll_timer_callback()
 {
   NodeCanopenProxyDriver<NODETYPE>::poll_timer_callback();
+  if (motor_) {
+    motor_->handleRead();
+    motor_->handleWrite();
+  }
+  // publish();
 }
 
 template<class NODETYPE>
@@ -243,6 +235,8 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::add_to_master()
 {
   NodeCanopenProxyDriver<NODETYPE>::add_to_master();
+  this->motor_->setDriver(this->lely_driver_);
+  // RCLCPP_INFO_STREAM(this->node_->get_logger(), "Setting driver for motor");
 }
 
 template<class NODETYPE>
@@ -251,6 +245,10 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_init(
   std_srvs::srv::Trigger::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
+    motor_->handleInit();
+    response->success = true;
+  } else {
+    response->success = false;
   }
 }
 
@@ -260,6 +258,10 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_recover(
   std_srvs::srv::Trigger::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
+    motor_->handleRecover();
+    response->success = true;
+  } else {
+    response->success = false;
   }
 }
 template<class NODETYPE>
@@ -268,15 +270,10 @@ void NodeCanopenPreMappedDriver<NODETYPE>::handle_halt(
   std_srvs::srv::Trigger::Response::SharedPtr response)
 {
   if (this->activated_.load()) {
-  }
-}
-
-template<class NODETYPE>
-void NodeCanopenPreMappedDriver<NODETYPE>::handle_set_target(
-  const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-  canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response)
-{
-  if (this->activated_.load()) {
+    motor_->handleHalt();
+    response->success = true;
+  } else {
+    response->success = false;
   }
 }
 
@@ -284,7 +281,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::init_motor()
 {
   if (this->activated_.load()) {
-    return true;
+    return motor_->handleInit();
   } else {
     RCLCPP_INFO(this->node_->get_logger(), "Initialisation failed.");
     return false;
@@ -295,7 +292,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::recover_motor()
 {
   if (this->activated_.load()) {
-    return true;
+    return motor_->handleRecover();
   } else {
     return false;
   }
@@ -305,7 +302,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::halt_motor()
 {
   if (this->activated_.load()) {
-    return true;
+    return motor_->handleHalt();
   } else {
     return false;
   }

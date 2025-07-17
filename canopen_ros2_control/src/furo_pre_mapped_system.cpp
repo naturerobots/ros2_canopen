@@ -131,7 +131,10 @@ hardware_interface::return_type FuroPreMappedSystem::write(
   for (auto it = drivers.begin(); it != drivers.end(); ++it) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver != nullptr && motor_running_) {
-      pre_mapped_driver->set_target(0.0, rollover);
+
+      auto joint_name = pre_mapped_driver->get_motor_joint_name();
+      auto target_velocity = motor_data_[joint_name].target_velocity;
+      // pre_mapped_driver->set_target(target_velocity, rollover);
     }
   }
   rollover++;

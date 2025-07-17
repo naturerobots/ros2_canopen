@@ -76,6 +76,7 @@ public:
    * @ref diagnostic_status_ and publishing it.
    */
   void handleDiag();
+
   /**
    * @brief Initialise the drive
    *
@@ -85,6 +86,7 @@ public:
    *
    */
   bool handleInit();
+
   /**
    * @brief Read objects of the drive
    *
@@ -93,6 +95,7 @@ public:
    *
    */
   void handleRead();
+
   /**
    * @brief Writes objects to the drive
    *
@@ -101,6 +104,7 @@ public:
    *
    */
   void handleWrite();
+
   /**
    * @brief Shutdowns the drive
    *
@@ -109,6 +113,15 @@ public:
    *
    */
   bool handleShutdown();
+
+  /**
+   * @brief Activates the drive
+   *
+   * This function activates the drive
+   *
+   */
+  bool activate();
+
   /**
    * @brief Executes a quickstop
    *
@@ -217,13 +230,11 @@ private:
   std::shared_ptr<LelyDriverBridge> driver;
   uint16_t status_word_entry_index = 0;
   uint16_t control_word_entry_index = 0;
-  uint16_t op_mode_display_index = 0;
-  uint16_t op_mode_index = 0;
-  uint16_t supported_drive_modes_index = 0;
   uint16_t speed_feedback_index = 0;
   uint16_t position_feedback_index = 0;
 
   // whill switch to true when initialization procedure has finished
+  bool is_halted_ = true;
   bool initialized_ = false;
   bool has_communication_failure_ = false;
 

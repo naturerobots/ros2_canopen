@@ -134,19 +134,61 @@ void NodeCanopenPreMappedDriver<NODETYPE>::configure(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::configure(false);
   RCLCPP_INFO_STREAM(this->node_->get_logger(), "CONFIGURE");
+  YAML::Node motor_conf;
+  try {
+    motor_conf = this->config_["motor"];
+  } catch (...) {
+    RCLCPP_ERROR_STREAM(
+      this->node_->get_logger(),
+      "Motor configuration not found in the parameter server. "
+      "Please check your bus configuration file.");
+    return;
+  }
 
+  std::optional<std::string> joint_name;
+  std::optional<double> scale_pos_to_dev;
+  std::optional<double> scale_pos_from_dev;
+  std::optional<double> scale_vel_to_dev;
+  std::optional<double> scale_vel_from_dev;
 
-  // motor_ =
-  //   std::make_shared<Motor402>(
-  //   nullptr,
-  //   (ros2_canopen::State402::InternalState)switching_state.value_or(
-  //     (int)ros2_canopen::State402::InternalState::Operation_Enable),
-  //   joint_name.value(), scale_pos_to_dev.value_or(1000.0),
-  //   scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
-  //   scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0));
+  try {
+    joint_name = std::optional(motor_conf["joint_name"].as<std::string>());
+  } catch (...) {
+    RCLCPP_ERROR_STREAM(
+      this->node_->get_logger(),
+      "Attribute 'joint_name' not found in the motor configuration. "
+      "Please check your bus configuration file.");
+    return;
+  }
+  try {
+    scale_pos_to_dev = std::optional(motor_conf["scale_pos_to_dev"].as<double>());
+  } catch (...) {
+  }
+  try {
+    scale_pos_from_dev = std::optional(motor_conf["scale_pos_from_dev"].as<double>());
+  } catch (...) {
+  }
+  try {
+    scale_vel_to_dev = std::optional(motor_conf["scale_vel_to_dev"].as<double>());
+  } catch (...) {
+  }
+  try {
+    scale_vel_from_dev = std::optional(motor_conf["scale_vel_from_dev"].as<double>());
+  } catch (...) {
+  }
+
+  motor_ =
+    std::make_shared<PreMappedMotor>(
+    nullptr,
+    joint_name.value(),
+    scale_pos_to_dev.value_or(1000.0),
+    scale_pos_from_dev.value_or(0.001),
+    scale_vel_to_dev.value_or(1000.0),
+    scale_vel_from_dev.value_or(0.001)
+    );
 
   // create publishers and subscribers
-  // setupRosInterfaces(joint_name.value());
+  setupRosInterfaces(joint_name.value());
 }
 
 template<class NODETYPE>

@@ -51,6 +51,9 @@ public:
       // Is this the correct way to write the target in combination with the rollover counter?
       driver->universal_set_value<int32_t>(0x60FF, 0, this->target_);
       driver->universal_set_value<uint8_t>(0x382A, 0, rollover);
+      RCLCPP_INFO(
+        rclcpp::get_logger("canopen_402_target"),
+        "Target command set to %f with rollover counter %d", this->target_, rollover);
       return true;
     } else {
       return false;

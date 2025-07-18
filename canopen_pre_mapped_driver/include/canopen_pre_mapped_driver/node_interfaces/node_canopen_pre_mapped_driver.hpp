@@ -45,7 +45,6 @@ protected:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_init_service;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_halt_service;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr handle_recover_service;
-  rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr handle_set_target_service;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr publish_joint_state;
 
   void publish();
@@ -175,20 +174,6 @@ public:
    * @return bool
    */
   bool halt_motor();
-
-  /**
-   * @brief Service Callback to set target
-   *
-   * Calls Motor402::setTarget and sets the requested target value. Note
-   * that the resulting movement is dependent on the Operation Mode and the
-   * drives state.
-   *
-   * @param [in] request
-   * @param [out] response
-   */
-  void handle_set_target(
-    const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
-    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response);
 
   /**
    * @brief Method to set target

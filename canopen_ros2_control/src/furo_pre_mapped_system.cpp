@@ -47,6 +47,13 @@ void FuroPreMappedSystem::initDeviceContainer()
   device_container_->init(
     info_.hardware_parameters["can_interface_name"], info_.hardware_parameters["master_config"],
     info_.hardware_parameters["bus_config"], tmp_master_bin);
+
+  auto can_master = device_container_->get_master();
+  RCLCPP_INFO_STREAM(kLogger, "Resetting CANopen master...");
+  can_master->Command(lely::canopen::NmtCommand::RESET_NODE, 0x00);
+  rclcpp::sleep_for(std::chrono::milliseconds(2000));
+  RCLCPP_INFO_STREAM(kLogger, "CANopen master reset done.");
+
   auto drivers = device_container_->get_registered_drivers();
   RCLCPP_INFO(kLogger, "Number of registered drivers: '%zu'", device_container_->count_drivers());
 
@@ -91,6 +98,7 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_configure(
     RCLCPP_ERROR(kLogger, "Could not join init thread!");
     return CallbackReturn::ERROR;
   }
+  rclcpp::sleep_for(std::chrono::milliseconds(2000));
   return CallbackReturn::SUCCESS;
 }
 
@@ -141,7 +149,16 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
   auto ret_val = CanopenSystem::on_activate(previous_state);
-  // auto drivers = device_container_->get_registered_drivers();
+  auto can_master = device_container_->get_master();
+  can_master->Command(lely::canopen::NmtCommand::START, 0x00);
+  rclcpp::sleep_for(std::chrono::milliseconds(100));
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
+    if (driver) {
+      // driver->get_node_canopen_driver_interface()->activate();
+    }
+  }
   motor_running_ = true; // Set the motor running flag to true on activation
   rollover = 0; // Reset rollover on activation
   RCLCPP_INFO_STREAM(kLogger, "FuroPreMappedSystem ACTIVATED");
@@ -181,10 +198,9 @@ hardware_interface::return_type FuroPreMappedSystem::write(
   for (auto it = drivers.begin(); it != drivers.end(); ++it) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver != nullptr && motor_running_) {
-
       auto joint_name = pre_mapped_driver->get_motor_joint_name();
       auto target_velocity = motor_data_[joint_name].target_velocity;
-      pre_mapped_driver->set_target(target_velocity, rollover);
+      // pre_mapped_driver->set_target(target_velocity, rollover);
     }
   }
   rollover++;

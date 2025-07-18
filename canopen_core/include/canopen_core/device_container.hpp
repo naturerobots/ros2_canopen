@@ -53,7 +53,7 @@ public:
    */
   DeviceContainer(
     std::weak_ptr<rclcpp::Executor> executor =
-      std::weak_ptr<rclcpp::executors::MultiThreadedExecutor>(),
+    std::weak_ptr<rclcpp::executors::MultiThreadedExecutor>(),
     std::string node_name = "device_container",
     const rclcpp::NodeOptions & node_options = rclcpp::NodeOptions())
   : rclcpp_components::ComponentManager(executor, node_name, node_options)
@@ -148,23 +148,16 @@ public:
    */
   virtual void shutdown()
   {
-    for (auto it = registered_drivers_.begin(); it != registered_drivers_.end(); ++it)
-    {
-      try
-      {
+    for (auto it = registered_drivers_.begin(); it != registered_drivers_.end(); ++it) {
+      try {
         it->second->shutdown();
-      }
-      catch (const std::exception & e)
-      {
+      } catch (const std::exception & e) {
         std::cerr << e.what() << '\n';
       }
     }
-    try
-    {
+    try {
       can_master_->shutdown();
-    }
-    catch (const std::exception & e)
-    {
+    } catch (const std::exception & e) {
       std::cerr << e.what() << '\n';
     }
   }
@@ -198,7 +191,7 @@ public:
    *
    * @return size_t
    */
-  virtual size_t count_drivers() { return registered_drivers_.size(); }
+  virtual size_t count_drivers() {return registered_drivers_.size();}
 
   /**
    * @brief Get node ids of all drivers with type
@@ -215,19 +208,15 @@ public:
     std::vector<std::string> devices;
     std::vector<uint16_t> ids;
     uint32_t count = this->config_->get_all_devices(devices);
-    if (count == 0)
-    {
+    if (count == 0) {
       return ids;
     }
 
-    for (auto it = devices.begin(); it != devices.end(); it++)
-    {
+    for (auto it = devices.begin(); it != devices.end(); it++) {
       auto driver_name = config_->get_entry<std::string>(*it, "driver");
-      if (driver_name.has_value())
-      {
+      if (driver_name.has_value()) {
         std::string name = driver_name.value();
-        if (name.compare(type) == 0)
-        {
+        if (name.compare(type) == 0) {
           auto node_id = config_->get_entry<uint16_t>(*it, "node_id");
           ids.push_back(node_id.value());
         }
@@ -248,33 +237,40 @@ public:
   {
     std::vector<std::string> devices;
     uint32_t count = this->config_->get_all_devices(devices);
-    if (count == 0)
-    {
+    if (count == 0) {
       return "";
     }
-    for (auto it = devices.begin(); it != devices.end(); it++)
-    {
+    for (auto it = devices.begin(); it != devices.end(); it++) {
       auto node_id = config_->get_entry<uint16_t>(*it, "node_id");
-      if (node_id.has_value() && node_id.value() == id)
-      {
+      if (node_id.has_value() && node_id.value() == id) {
         auto driver_name = config_->get_entry<std::string>(*it, "driver");
         return driver_name.value();
       }
     }
   }
 
+  std::shared_ptr<lely::canopen::AsyncMaster> get_master()
+  {
+    if (this->can_master_) {
+      return this->can_master_->get_master();
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Master not initialized");
+      throw std::runtime_error("Master not initialized");
+    }
+  }
+
 protected:
   // Components
   std::map<uint16_t, std::shared_ptr<CanopenDriverInterface>>
-    registered_drivers_;  ///< Map of drivers registered in busconfiguration. Name is key.
+  registered_drivers_;    ///< Map of drivers registered in busconfiguration. Name is key.
   std::shared_ptr<ros2_canopen::CanopenMasterInterface>
-    can_master_;  ///< Pointer to can master instance
+  can_master_;    ///< Pointer to can master instance
   uint16_t can_master_id_;
   std::unique_ptr<ros2_canopen::LifecycleManager> lifecycle_manager_;
 
   // Configuration
   std::shared_ptr<ros2_canopen::ConfigurationManager>
-    config_;                        ///< Pointer to configuration manager instance
+  config_;                          ///< Pointer to configuration manager instance
   std::string dcf_txt_;             ///< Cached value of .dcf file parameter
   std::string bus_config_;          ///< Cached value of bus.yml file parameter
   std::string dcf_bin_;             ///< Cached value of .bin file parameter
@@ -336,14 +332,11 @@ protected:
   virtual void add_node_to_executor(
     rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_interface)
   {
-    if (auto exec = executor_.lock())
-    {
+    if (auto exec = executor_.lock()) {
       RCLCPP_INFO(
         this->get_logger(), "Added %s to executor", node_interface->get_fully_qualified_name());
       exec->add_node(node_interface, true);
-    }
-    else
-    {
+    } else {
       RCLCPP_ERROR(
         this->get_logger(), "Failed to add component %s",
         node_interface->get_fully_qualified_name());

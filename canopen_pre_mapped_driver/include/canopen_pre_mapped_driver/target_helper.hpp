@@ -36,6 +36,8 @@ class TargetHelper
 {
   int32_t target_;
   uint8_t rollover_;  // rollover counter
+  uint8_t start_after_;
+  uint8_t target_counter_;
   std::atomic<bool> has_target_;
   std::shared_ptr<LelyDriverBridge> driver_;
 
@@ -43,6 +45,9 @@ public:
   TargetHelper(std::shared_ptr<LelyDriverBridge> driver)
   {
     this->driver_ = driver;
+    rollover_ = 0;
+    start_after_ = 32;  // start after 2 cycles
+    target_counter_ = 0;
     has_target_ = false;
   }
 
@@ -55,6 +60,7 @@ public:
       // RCLCPP_INFO(
       //   rclcpp::get_logger("canopen_402_target"),
       //   "Target command set to %f with rollover counter %d", this->target_, this->rollover_);
+      rollover_++;
       return true;
     } else {
       return false;
@@ -74,18 +80,30 @@ public:
     try {
       target_ = numeric_cast<int32_t>(val);
     } catch (negative_overflow &) {
-      std::cout << "canopen_402 Command " << val
-                << " does not fit into target, clamping to min limit" << std::endl;
+      RCLCPP_WARN_STREAM(
+        rclcpp::get_logger("canopen_402_target"),
+        "Target command " << val << " does not fit into target, clamping to min limit");
       target_ = std::numeric_limits<double>::min();
     } catch (positive_overflow &) {
-      std::cout << "canopen_402 Command " << val
-                << " does not fit into target, clamping to max limit" << std::endl;
+      RCLCPP_WARN_STREAM(
+        rclcpp::get_logger("canopen_402_target"),
+        "Target command " << val << " does not fit into target, clamping to max limit");
       target_ = std::numeric_limits<double>::max();
     } catch (...) {
-      std::cout << "canopen_402 Was not able to cast command " << val << std::endl;
+      RCLCPP_WARN_STREAM(
+        rclcpp::get_logger("canopen_402_target"),
+        "Was not able to cast command " << val);
       return false;
     }
-    rollover_ = rollover;
+    if (target_counter_ < start_after_) {
+      target_counter_++;
+      target_ = 0;  // do not send target command before start_after_ cycles
+    }
+
+    RCLCPP_INFO_STREAM(
+      rclcpp::get_logger("canopen_402_target"),
+      "Setting target command to " << target_);
+    // rollover_ = rollover;
     has_target_ = true;
     return true;
   }

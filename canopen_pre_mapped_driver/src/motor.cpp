@@ -22,7 +22,8 @@ using namespace ros2_canopen;
 bool PreMappedMotor::setTarget(double val, uint8_t rollover)
 {
   if (target_helper_) {
-    return target_helper_->setTarget(val, rollover);
+    double target = val * scale_vel_to_dev_;
+    return target_helper_->setTarget(target, rollover);
   }
   return false;
 }
@@ -91,8 +92,8 @@ bool PreMappedMotor::handleInit()
   }
   start_fault_reset_ = true;
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
-  initialized_ = true;
   this->activate();
+  initialized_ = true;
   return true;
 }
 

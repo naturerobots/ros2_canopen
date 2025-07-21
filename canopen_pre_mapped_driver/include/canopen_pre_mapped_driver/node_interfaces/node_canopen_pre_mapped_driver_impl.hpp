@@ -171,7 +171,6 @@ void NodeCanopenPreMappedDriver<NODETYPE>::configure(bool called_from_base)
     scale_vel_to_dev.value_or(1000.0),
     scale_vel_from_dev.value_or(0.001)
     );
-
   // create publishers and subscribers
   setupRosInterfaces(joint_name.value());
 }
@@ -180,7 +179,7 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::activate(false);
-  // this->activated_.store(true);
+  this->activated_.store(true);
   // Get CANopen Node ID
   uint8_t node_id = this->lely_driver_->get_id();
   // Configure motor controller via SDO's
@@ -211,8 +210,7 @@ void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
   // this->start_node_nmt_command();
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  this->motor_->activate();
-  // this->motor_->handleInit();
+  // this->motor_->activate();
 }
 
 template<class NODETYPE>
@@ -225,11 +223,11 @@ template<class NODETYPE>
 void NodeCanopenPreMappedDriver<NODETYPE>::poll_timer_callback()
 {
   NodeCanopenProxyDriver<NODETYPE>::poll_timer_callback();
-  if (motor_) {
+  if (motor_ && motor_->isInitialized()) {
     motor_->handleRead();
     motor_->handleWrite();
+    publish();
   }
-  // publish();
 }
 
 template<class NODETYPE>

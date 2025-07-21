@@ -58,7 +58,7 @@ void FuroPreMappedSystem::initDeviceContainer()
   RCLCPP_INFO(kLogger, "Number of registered drivers: '%zu'", device_container_->count_drivers());
 
   for (auto it = drivers.begin(); it != drivers.end(); it++) {
-    auto proxy_driver = std::static_pointer_cast<ros2_canopen::ProxyDriver>(it->second);
+    auto proxy_driver = std::static_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
 
     canopen_data_[it->first] = CanopenNodeData();
 
@@ -113,6 +113,9 @@ std::vector<hardware_interface::StateInterface> FuroPreMappedSystem::export_stat
 
     auto joint_name = info_.joints[i].name;
 
+    RCLCPP_INFO_STREAM(
+      kLogger, "Exporting state interfaces for joint: " << joint_name);
+
     // actual position
     state_interfaces.emplace_back(
       hardware_interface::StateInterface(
@@ -123,9 +126,7 @@ std::vector<hardware_interface::StateInterface> FuroPreMappedSystem::export_stat
       hardware_interface::StateInterface(
         joint_name, hardware_interface::HW_IF_VELOCITY,
         &motor_data_[joint_name].actual_speed));
-
   }
-
   return state_interfaces;
 }
 
@@ -136,11 +137,16 @@ std::vector<hardware_interface::CommandInterface> FuroPreMappedSystem::export_co
   command_interfaces = CanopenSystem::export_command_interfaces();
 
   for (uint i = 0; i < info_.joints.size(); i++) {
+    auto joint_name = info_.joints[i].name;
+
+    RCLCPP_INFO_STREAM(
+      kLogger, "Exporting command interfaces for joint: " << joint_name);
+
     // target
     command_interfaces.emplace_back(
       hardware_interface::CommandInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY,
-        &motor_data_[info_.joints[i].name].target_velocity));
+        joint_name, hardware_interface::HW_IF_VELOCITY,
+        &motor_data_[joint_name].target_velocity));
   }
   return command_interfaces;
 }
@@ -152,16 +158,15 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_activate(
   auto can_master = device_container_->get_master();
   can_master->Command(lely::canopen::NmtCommand::START, 0x00);
   rclcpp::sleep_for(std::chrono::milliseconds(100));
+  RCLCPP_INFO_STREAM(kLogger, "FuroPreMappedSystem ACTIVATED");
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it) {
-    auto driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
-    if (driver) {
-      // driver->get_node_canopen_driver_interface()->activate();
+    auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
+    if (pre_mapped_driver != nullptr) {
+      pre_mapped_driver->init_motor();
     }
   }
   motor_running_ = true; // Set the motor running flag to true on activation
-  rollover = 0; // Reset rollover on activation
-  RCLCPP_INFO_STREAM(kLogger, "FuroPreMappedSystem ACTIVATED");
   return ret_val;
 }
 
@@ -193,14 +198,21 @@ hardware_interface::return_type FuroPreMappedSystem::write(
   const rclcpp::Time & time,
   const rclcpp::Duration & period)
 {
-  // auto ret_val = CanopenSystem::write(time, period);
+  auto ret_val = CanopenSystem::write(time, period);
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver != nullptr && motor_running_) {
       auto joint_name = pre_mapped_driver->get_motor_joint_name();
       auto target_velocity = motor_data_[joint_name].target_velocity;
+      RCLCPP_INFO_STREAM(
+        kLogger,
+        "Motor data for joint '" << joint_name << "' with position '" <<
+          (double) motor_data_[joint_name].actual_position << "' and speed '" <<
+          (double) motor_data_[joint_name].actual_speed << "' and target velocity '" <<
+          (double) target_velocity);
       // pre_mapped_driver->set_target(target_velocity, rollover);
+      // pre_mapped_driver->set_target(0.05, rollover);
     }
   }
   rollover++;

@@ -100,10 +100,6 @@ public:
       target_ = 0;  // do not send target command before start_after_ cycles
     }
 
-    RCLCPP_INFO_STREAM(
-      rclcpp::get_logger("canopen_402_target"),
-      "Setting target command to " << target_);
-    // rollover_ = rollover;
     has_target_ = true;
     return true;
   }

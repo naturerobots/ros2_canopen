@@ -204,15 +204,8 @@ hardware_interface::return_type FuroPreMappedSystem::write(
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver != nullptr && motor_running_) {
       auto joint_name = pre_mapped_driver->get_motor_joint_name();
-      auto target_velocity = motor_data_[joint_name].target_velocity;
-      RCLCPP_INFO_STREAM(
-        kLogger,
-        "Motor data for joint '" << joint_name << "' with position '" <<
-          (double) motor_data_[joint_name].actual_position << "' and speed '" <<
-          (double) motor_data_[joint_name].actual_speed << "' and target velocity '" <<
-          (double) target_velocity);
-      // pre_mapped_driver->set_target(target_velocity, rollover);
-      // pre_mapped_driver->set_target(0.05, rollover);
+      double target_velocity = motor_data_[joint_name].target_velocity;
+      pre_mapped_driver->set_target(target_velocity, rollover);
     }
   }
   rollover++;

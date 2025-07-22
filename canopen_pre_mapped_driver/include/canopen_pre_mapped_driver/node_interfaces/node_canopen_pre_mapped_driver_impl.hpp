@@ -176,10 +176,8 @@ void NodeCanopenPreMappedDriver<NODETYPE>::configure(bool called_from_base)
 }
 
 template<class NODETYPE>
-void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
+void NodeCanopenPreMappedDriver<NODETYPE>::configure_device()
 {
-  NodeCanopenProxyDriver<NODETYPE>::activate(false);
-  this->activated_.store(true);
   // Get CANopen Node ID
   uint8_t node_id = this->lely_driver_->get_id();
   // Configure motor controller via SDO's
@@ -206,6 +204,39 @@ void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
       this->node_->get_logger(),
       "Could not activate driver because lely communication is not available.");
   }
+}
+
+template<class NODETYPE>
+void NodeCanopenPreMappedDriver<NODETYPE>::activate(bool called_from_base)
+{
+  NodeCanopenProxyDriver<NODETYPE>::activate(false);
+  // this->activated_.store(true);
+  // // Get CANopen Node ID
+  // uint8_t node_id = this->lely_driver_->get_id();
+  // // Configure motor controller via SDO's
+  // if (this->activated_.load()) {
+  //   // Set COB-ID for TPDO1
+  //   uint32_t tpdo1_cob_id = 0x180 + node_id;
+  //   this->lely_driver_->async_sdo_write_typed(0x1800, 0x01, tpdo1_cob_id);
+  //   // Set COB-ID for RPDO1
+  //   uint32_t rpdo1_cob_id = 0x200 + node_id;
+  //   this->lely_driver_->async_sdo_write_typed(0x1400, 0x01, rpdo1_cob_id);
+  //   // Set transmission type for TPDO1 - asynchronous/event-driven 0xFF
+  //   this->lely_driver_->async_sdo_write_typed(0x1800, 0x02, 0xFF);
+  //   // Set transmission type for RPDO1 - asynchronous/event-driven 0xFF
+  //   this->lely_driver_->async_sdo_write_typed(0x1400, 0x02, 0xFF);
+  //   // Set producer heartbeat time to 100 ms
+  //   this->lely_driver_->async_sdo_write_typed(0x1017, 0x00, 0x64);
+  //   // Set consumer heartbeat time to 300 ms
+  //   this->lely_driver_->async_sdo_write_typed(0x1016, 0x01, 0x012C);
+  //   RCLCPP_INFO_STREAM(
+  //     this->node_->get_logger(),
+  //     "Successfully set SDOs for node ID: " << static_cast<int>(node_id));
+  // } else {
+  //   RCLCPP_ERROR_STREAM(
+  //     this->node_->get_logger(),
+  //     "Could not activate driver because lely communication is not available.");
+  // }
   // this->reset_node_nmt_command();  // and wait for device to perform initialization
   // std::this_thread::sleep_for(std::chrono::milliseconds(100));
   // this->start_node_nmt_command();

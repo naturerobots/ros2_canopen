@@ -56,6 +56,8 @@ public:
 
   void setupRosInterfaces(const std::string & joint_name);
 
+  void configure_device();
+
   virtual void init(bool called_from_base) override;
   virtual void configure(bool called_from_base) override;
   virtual void activate(bool called_from_base) override;

@@ -34,7 +34,7 @@ namespace ros2_canopen
 
 class TargetHelper
 {
-  int32_t target_;
+  int16_t target_;
   uint8_t rollover_;  // rollover counter
   uint8_t start_after_;
   uint8_t target_counter_;
@@ -55,7 +55,8 @@ public:
   {
     if (has_target_ && this->driver_) {
       // Is this the correct way to write the target in combination with the rollover counter?
-      driver_->universal_set_value<int32_t>(0x60FF, 0, this->target_);
+      // driver_->universal_set_value<int32_t>(0x60FF, 0, this->target_);
+      driver_->universal_set_value<int16_t>(0x3833, 0, this->target_);
       driver_->universal_set_value<uint8_t>(0x382A, 0, this->rollover_);
       // RCLCPP_INFO(
       //   rclcpp::get_logger("canopen_402_target"),
@@ -78,7 +79,7 @@ public:
     using boost::numeric::negative_overflow;
     using boost::numeric::positive_overflow;
     try {
-      target_ = numeric_cast<int32_t>(val);
+      target_ = numeric_cast<int16_t>(val);
     } catch (negative_overflow &) {
       RCLCPP_WARN_STREAM(
         rclcpp::get_logger("canopen_402_target"),

@@ -70,6 +70,11 @@ public:
     node_canopen_pre_mapped_driver_->register_rpdo_cb(rpdo_cb);
   }
 
+  void configure_device()
+  {
+    node_canopen_pre_mapped_driver_->configure_device();
+  }
+
   double get_speed()
   {
     return node_canopen_pre_mapped_driver_->get_speed();

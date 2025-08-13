@@ -1,0 +1,31 @@
+//    Copyright 2025 Georg John, Nature Robots GmbH
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+
+#include "canopen_scanreco_driver/scanreco_driver.hpp"
+
+using namespace ros2_canopen;
+
+ScanrecoDriver::ScanrecoDriver(rclcpp::NodeOptions node_options)
+: CanopenDriver(node_options)
+{
+  node_canopen_scanreco_driver_ =
+    std::make_shared<node_interfaces::NodeCanopenScanrecoDriver<rclcpp::Node>>(this);
+  node_canopen_driver_ = std::static_pointer_cast<node_interfaces::NodeCanopenDriverInterface>(
+    node_canopen_scanreco_driver_);
+}
+
+#include "rclcpp_components/register_node_macro.hpp"
+RCLCPP_COMPONENTS_REGISTER_NODE(ros2_canopen::ScanrecoDriver)

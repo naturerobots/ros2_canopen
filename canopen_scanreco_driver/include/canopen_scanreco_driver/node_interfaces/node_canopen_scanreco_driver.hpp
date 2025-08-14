@@ -36,14 +36,11 @@ class NodeCanopenScanrecoDriver : public NodeCanopenProxyDriver<NODETYPE>
 protected:
   bool remote_online_ = false; // Indicates if the remote controller is online and not in emergency stop
   float speed_regulator_;
-  float linear_stick_amplitude_;
-  float turning_stick_amplitude_;
-  uint8_t drive_mode_; // 0b0001: MAN,     0b0010: COST,     0b0100: AUTO
-  uint8_t direction_;  // 0b0001: FORWARD, 0b0010: BACKWARD, 0b0100: RIGHT, 0b1000: LEFT
-  rclcpp::Time last_control_; // Timestamp of the last control command
-
-  float linear_speed_scale_ = 0.5;   // Scale for linear speed
-  float angular_speed_scale_ = 0.5 * 3.14; // Scale for angular speed
+  float left_joystick_x_;
+  float left_joystick_y_;
+  float right_joystick_x_;
+  float right_joystick_y_;
+  float speed_scale_ = 0.5;   // Scale for speed
 
   rclcpp::Publisher<four_wheel_steering_msgs::msg::FourWheelSteeringStamped>::SharedPtr
     four_wheel_steering_cmd_publisher_;

@@ -25,10 +25,10 @@ NodeCanopenScanrecoDriver<NODETYPE>::NodeCanopenScanrecoDriver(NODETYPE * node)
 : ros2_canopen::node_interfaces::NodeCanopenProxyDriver<NODETYPE>(node),
   remote_online_(false),
   speed_regulator_(0),
-  linear_stick_amplitude_(0),
-  turning_stick_amplitude_(0),
-  drive_mode_(0),
-  direction_(0)
+  left_joystick_x_(0.0),
+  left_joystick_y_(0.0),
+  right_joystick_x_(0.0),
+  right_joystick_y_(0.0)
 {
 }
 
@@ -86,12 +86,11 @@ void NodeCanopenScanrecoDriver<NODETYPE>::activate(bool called_from_base)
   called_from_base = false;
   NodeCanopenProxyDriver<NODETYPE>::activate(called_from_base);
   remote_online_ = false;
-  speed_regulator_ = 0.0;
-  linear_stick_amplitude_ = 0.0;
-  turning_stick_amplitude_ = 0.0;
-  drive_mode_ = 0;
-  direction_ = 0;
-  last_control_ = this->node_->now();
+  speed_regulator_ = 0.f;
+  left_joystick_x_ = 0.f;
+  left_joystick_y_ = 0.f;
+  right_joystick_x_ = 0.f;
+  right_joystick_y_ = 0.f;
 }
 
 template<class NODETYPE>
@@ -100,12 +99,11 @@ void NodeCanopenScanrecoDriver<NODETYPE>::deactivate(bool called_from_base)
   called_from_base = false;
   NodeCanopenProxyDriver<NODETYPE>::deactivate(called_from_base);
   remote_online_ = false;
-  speed_regulator_ = 0.0;
-  linear_stick_amplitude_ = 0.0;
-  turning_stick_amplitude_ = 0.0;
-  drive_mode_ = 0;
-  direction_ = 0;
-  last_control_ = this->node_->now();
+  speed_regulator_ = 0.f;
+  left_joystick_x_ = 0.f;
+  left_joystick_y_ = 0.f;
+  right_joystick_x_ = 0.f;
+  right_joystick_y_ = 0.f;
 }
 
 template<class NODETYPE>
@@ -122,38 +120,88 @@ void NodeCanopenScanrecoDriver<NODETYPE>::shutdown(bool called_from_base)
   NodeCanopenProxyDriver<NODETYPE>::shutdown(called_from_base);
 }
 
+bool isSystemRunning(ros2_canopen::COData d)
+{
+  if (d.index_ == 0x6404 && d.subindex_ == 0x01) {
+    return d.data_ & 0x01;
+  }
+  return false;
+}
+
+float normalizedJoystickValue(int v)
+{
+  // Reading has offset of 0x7F
+  return (v - 127) / 127.f;
+}
+
+float normalizedSpeedRegulatorValue(int v)
+{
+  // Reading has offset of 0x7F
+  return std::max((v - 127) / 127.f, 0.f);
+}
+
+float readLeftJoystickDirectionX(ros2_canopen::COData d)
+{
+  if (d.index_ == 0x6400 && d.subindex_ == 0x01) {
+    return normalizedJoystickValue(d.data_);
+  } else {
+    return 0.f;
+  }
+}
+
+float readLeftJoystickDirectionY(ros2_canopen::COData d)
+{
+  if (d.index_ == 0x6400 && d.subindex_ == 0x02) {
+    return normalizedJoystickValue(d.data_);
+  } else {
+    return 0.f;
+  }
+}
+
+float readRightJoystickDirectionX(ros2_canopen::COData d)
+{
+  if (d.index_ == 0x6400 && d.subindex_ == 0x03) {
+    return normalizedJoystickValue(d.data_);
+  } else {
+    return 0.f;
+  }
+}
+
+float readRightJoystickDirectionY(ros2_canopen::COData d)
+{
+  if (d.index_ == 0x6400 && d.subindex_ == 0x04) {
+    return normalizedJoystickValue(d.data_);
+  } else {
+    return 0.f;
+  }
+}
+
+float readSpeedRegulator(ros2_canopen::COData d)
+{
+  if (d.index_ == 0x6400 && d.subindex_ == 0x05) {
+    return normalizedSpeedRegulatorValue(d.data_);
+  } else {
+    return 0.f;
+  }
+}
+
+
 template<class NODETYPE>
 void NodeCanopenScanrecoDriver<NODETYPE>::on_rpdo(COData d)
 {
   if (this->activated_.load()) {
-    // RCLCPP_INFO(
-    //   this->node_->get_logger(), "Node ID 0x%X: Received PDO index %#04x, subindex %hhu, data %x",
-    //   this->lely_driver_->get_id(), d.index_, d.subindex_, d.data_);
-    if (d.index_ == 0x6000 && d.subindex_ == 0x02) {  // Check if remote controller is running and not in emergency stop
-      if (d.data_ & 0b00000111) {
-        remote_online_ = true;
-      } else {
-        remote_online_ = false;
-      }
-    } else if (d.index_ == 0x6000 && d.subindex_ == 0x01) {  // Read direction register
-      direction_ = d.data_;
-    } else if (d.index_ == 0x6400 && d.subindex_ == 0x01) {  // Read linear stick amplitude
-      linear_stick_amplitude_ = d.data_ / 255.0;  // Convert to float in range [0.0, 1.0]
-    } else if (d.index_ == 0x6400 && d.subindex_ == 0x02) {  // Read turning stick amplitude
-      turning_stick_amplitude_ = d.data_ / 255.0;  // Convert to float in range [0.0, 1.0]
-    } else if (d.index_ == 0x6400 && d.subindex_ == 0x03) {  // Read speed regulator position
-      speed_regulator_ = d.data_ / 255.0;  // Convert to float in range [0.0, 1.0]
-    } else if (d.index_ == 0x6000 && d.subindex_ == 0x11) {  // Read if control command was received
-      if (d.data_ & 0b00010000) {
-        last_control_ = this->node_->now();
-      }
-    }
-    if (not remote_online_) {
-      this->publish_stop_cmd();
-    } else if (this->node_->now() - last_control_ < rclcpp::Duration::from_seconds(1.0)) {
-      // If we received a control command recently, publish the control command
-      this->publish_control_cmd();
-    }
+    remote_online_ = isSystemRunning(d);
+    speed_regulator_ = readSpeedRegulator(d);
+    left_joystick_x_ = readLeftJoystickDirectionX(d);
+    left_joystick_y_ = readLeftJoystickDirectionY(d);
+    right_joystick_x_ = readRightJoystickDirectionX(d);
+    right_joystick_y_ = readRightJoystickDirectionY(d);
+  }
+  if (not remote_online_) {
+    this->publish_stop_cmd();
+  } else {
+    // If we received a control command recently, publish the control command
+    this->publish_control_cmd();
   }
 }
 
@@ -163,9 +211,9 @@ void NodeCanopenScanrecoDriver<NODETYPE>::publish_stop_cmd()
   if (this->activated_.load()) {
     auto message = four_wheel_steering_msgs::msg::FourWheelSteeringStamped();
     message.header.stamp = this->node_->now();
-    message.data.front_steering_angle = 0.0;  // No steering movement
-    message.data.rear_steering_angle = 0.0;  // No steering movement
-    message.data.speed = 0.0;  // No forward/backward movement
+    message.data.front_steering_angle = 0.0;   // No steering movement
+    message.data.rear_steering_angle = 0.0;   // No steering movement
+    message.data.speed = 0.0;   // No forward/backward movement
     four_wheel_steering_cmd_publisher_->publish(message);
   }
 }
@@ -177,29 +225,10 @@ void NodeCanopenScanrecoDriver<NODETYPE>::publish_control_cmd()
     auto message = four_wheel_steering_msgs::msg::FourWheelSteeringStamped();
     message.header.stamp = this->node_->now();
 
-    // Clip commands to [0.0, 1.0]
-    speed_regulator_ = std::max(0.0f, std::min(speed_regulator_, 1.0f));
-    linear_stick_amplitude_ = std::max(0.0f, std::min(linear_stick_amplitude_, 1.0f));
-    turning_stick_amplitude_ = std::max(0.0f, std::min(turning_stick_amplitude_, 1.0f));
+    message.data.speed = speed_regulator_ * speed_scale_;
 
-    if (direction_ & 0b0001) {  // FORWARD
-      message.data.speed = speed_regulator_ * linear_stick_amplitude_ * linear_speed_scale_;
-    } else if (direction_ & 0b0010) {  // BACKWARD
-      message.data.speed = -speed_regulator_ * linear_stick_amplitude_ * linear_speed_scale_;
-    } else {
-      message.data.speed = 0.0;  // No forward/backward movement
-    }
-
-    if (direction_ & 0b0100) {  // RIGHT
-      message.data.front_steering_angle = -speed_regulator_ * turning_stick_amplitude_ *
-        angular_speed_scale_;
-    } else if (direction_ & 0b1000) {  // LEFT
-      message.data.front_steering_angle = speed_regulator_ * turning_stick_amplitude_ *
-        angular_speed_scale_;
-    } else {
-      message.data.front_steering_angle = 0.0;  // No turning movement
-    }
-
+    float dir_ratio_ = std::clamp(left_joystick_y_ / left_joystick_x_, -1.f, 1.f);
+    message.data.front_steering_angle = atan(dir_ratio_);
     four_wheel_steering_cmd_publisher_->publish(message);
   }
 }

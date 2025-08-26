@@ -126,6 +126,9 @@ bool PreMappedMotor::handleRecover()
 
 bool PreMappedMotor::isFaulty()
 {
+
+  int32_t emcy = this->driver->universal_get_value<int32_t>(0x1014, 0);
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "EMCY: %d", emcy);
   RCLCPP_WARN_ONCE(
     rclcpp::get_logger("canopen_402_driver"),
     "Handle 'isFaulty' is not implemented in PreMappedMotor. No fault state is tracked.");

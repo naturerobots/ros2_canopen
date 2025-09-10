@@ -126,12 +126,11 @@ bool PreMappedMotor::handleRecover()
 
 bool PreMappedMotor::isFaulty()
 {
-
-  int32_t emcy = this->driver->universal_get_value<int32_t>(0x1014, 0);
-  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "EMCY: %d", emcy);
-  RCLCPP_WARN_ONCE(
-    rclcpp::get_logger("canopen_402_driver"),
-    "Handle 'isFaulty' is not implemented in PreMappedMotor. No fault state is tracked.");
+  uint16_t error_sub_ = this->driver->universal_get_value<uint16_t>(0x3841, 0);
+  if (error_sub_ != 0) {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Register error code %d. Killing ROS node...", error_sub_);
+    rclcpp::shutdown();
+  }
   return false;
 }
 

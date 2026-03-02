@@ -126,10 +126,12 @@ bool PreMappedMotor::handleRecover()
 
 bool PreMappedMotor::isFaulty()
 {
-  uint16_t error_sub_ = this->driver->universal_get_value<uint16_t>(0x3841, 0);
-  if (error_sub_ != 0) {
-    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Register error code %d. Killing ROS node...", error_sub_);
-    rclcpp::shutdown();
+  if (this->driver != nullptr) {
+    uint16_t error_sub_ = this->driver->universal_get_value<uint16_t>(0x3841, 0);
+    if (error_sub_ != 0) {
+      RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Register error code %d. Killing ROS node...", error_sub_);
+      return true;
+    }
   }
   return false;
 }

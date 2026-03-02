@@ -42,7 +42,7 @@ protected:
   uint8_t direction_;  // 0b0001: FORWARD, 0b0010: BACKWARD, 0b0100: RIGHT, 0b1000: LEFT
   rclcpp::Time last_control_; // Timestamp of the last control command
 
-  float linear_speed_scale_ = 0.5;   // Scale for linear speed
+  float linear_speed_scale_ = 1.0;   // Scale for linear speed
   float angular_speed_scale_ = 0.5 * 3.14; // Scale for angular speed
 
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_cmd_publisher_;

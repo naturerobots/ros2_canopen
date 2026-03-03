@@ -15,6 +15,11 @@
 //
 #include "canopen_ros2_control/furo_pre_mapped_system.hpp"
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
+#include <mutex>
+#include <condition_variable>
+#include <unordered_map>
+#include <chrono>
+
 
 namespace
 {
@@ -50,16 +55,97 @@ void FuroPreMappedSystem::initDeviceContainer()
 
   auto drivers = device_container_->get_registered_drivers();
   RCLCPP_INFO(kLogger, "Number of registered drivers: '%zu'", device_container_->count_drivers());
+  
+  // std::shared_ptr<lely::canopen::AsyncMaster>
   auto can_master = device_container_->get_master();
+
+  // ----------------------
+  // Register callbacks FIRST so we can see boot-up after reset
+  // ----------------------
+  std::mutex nmt_mtx;
+  std::condition_variable nmt_cv;
+  std::unordered_map<uint8_t, bool> saw_boot_or_preop;
+
+  // Prepare tracking map + register callbacks
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto proxy_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
+    if (!proxy_driver) {
+      continue;
+    }
+
+    const uint8_t node_id = static_cast<uint8_t>(it->first);
+    saw_boot_or_preop[node_id] = false;
+
+    auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
+      // Heartbeat state byte mapping:
+      // 0x00 = Boot-up, 0x7F = Pre-operational, 0x05 = Operational, 0x04 = Stopped
+      const uint8_t s = static_cast<uint8_t>(nmt_state);
+
+      if (s == 0x00 || s == 0x7F) {
+        std::lock_guard<std::mutex> lk(nmt_mtx);
+        saw_boot_or_preop[id] = true;
+        nmt_cv.notify_all();
+      }
+
+      // Keep your existing storage if you want:
+      canopen_data_[id].nmt_state.set_state(nmt_state);
+    };
+
+    proxy_driver->register_nmt_state_cb(nmt_state_cb);
+  }
 
   RCLCPP_INFO_STREAM(kLogger, "Resetting Application ...");
   rclcpp::sleep_for(std::chrono::milliseconds(100));
   can_master->Command(lely::canopen::NmtCommand::RESET_NODE, 0x00);
-  rclcpp::sleep_for(std::chrono::milliseconds(2000));
+  // Wait for boot-up / pre-op from all tracked nodes (timeout)
+  {
+    std::unique_lock<std::mutex> lk(nmt_mtx);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+    bool ok = nmt_cv.wait_until(lk, deadline, [&]() {
+      for (const auto &kv : saw_boot_or_preop) {
+        if (!kv.second) return false;
+      }
+      return true;
+    });
+
+    if (!ok) {
+      RCLCPP_ERROR_STREAM(kLogger, "Timeout waiting for Boot-up/Pre-op after RESET_NODE");
+    } else {
+      RCLCPP_INFO_STREAM(kLogger, "Boot-up/Pre-op observed for all nodes after RESET_NODE");
+    }
+  }
 
   RCLCPP_INFO_STREAM(kLogger, "Resetting CANopen communication ...");
+  // Reset tracking flags for the next reset
+  {
+    std::lock_guard<std::mutex> lk(nmt_mtx);
+    for (auto &kv : saw_boot_or_preop) 
+    {
+      kv.second = false;
+    }
+  }
+
   can_master->Command(lely::canopen::NmtCommand::RESET_COMM, 0x00);
-  rclcpp::sleep_for(std::chrono::milliseconds(200));
+
+  // Wait again (timeout)
+  {
+    std::unique_lock<std::mutex> lk(nmt_mtx);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+    bool ok = nmt_cv.wait_until(lk, deadline, [&]() {
+      for (const auto &kv : saw_boot_or_preop) {
+        if (!kv.second) return false;
+      }
+      return true;
+    });
+
+    if (!ok) {
+      RCLCPP_ERROR_STREAM(kLogger, "Timeout waiting for Boot-up/Pre-op after RESET_COMM");
+    } else {
+      RCLCPP_INFO_STREAM(kLogger, "Boot-up/Pre-op observed for all nodes after RESET_COMM");
+    }
+  }
 
   for (auto it = drivers.begin(); it != drivers.end(); it++) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
@@ -67,6 +153,7 @@ void FuroPreMappedSystem::initDeviceContainer()
       pre_mapped_driver->configure_device();
     }
   }
+
   RCLCPP_INFO_STREAM(kLogger, "CANopen reset done.");
 
   for (auto it = drivers.begin(); it != drivers.end(); it++) {

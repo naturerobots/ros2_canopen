@@ -43,6 +43,41 @@ hardware_interface::CallbackReturn FuroPreMappedSystem::on_init(
   return CallbackReturn::SUCCESS;
 }
 
+std::string getStateString(canopen::NmtState nmt_state)
+{
+  std::string message;
+
+  switch (nmt_state)
+  {
+    case canopen::NmtState::BOOTUP:
+      message = "BOOTUP";
+      break;
+    case canopen::NmtState::PREOP:
+      message = "PREOP";
+      break;
+    case canopen::NmtState::RESET_COMM:
+      message = "RESET_COMM";
+      break;
+    case canopen::NmtState::RESET_NODE:
+      message = "RESET_NODE";
+      break;
+    case canopen::NmtState::START:
+      message = "START";
+      break;
+    case canopen::NmtState::STOP:
+      message = "STOP";
+      break;
+    case canopen::NmtState::TOGGLE:
+      message = "TOGGLE";
+      break;
+    default:
+      message = "ERROR";
+      break;
+  }
+
+  return message;
+}
+
 void FuroPreMappedSystem::initDeviceContainer()
 {
   std::string tmp_master_bin = (info_.hardware_parameters["master_bin"] == "\"\"") ?
@@ -58,6 +93,12 @@ void FuroPreMappedSystem::initDeviceContainer()
   
   // std::shared_ptr<lely::canopen::AsyncMaster>
   auto can_master = device_container_->get_master();
+
+  if(can_master == nullptr)
+  {
+    // TODO: handle this case properly
+    throw std::runtime_error("can_master not initialized!");
+  }
 
   // ----------------------
   // Register callbacks FIRST so we can see boot-up after reset
@@ -77,11 +118,11 @@ void FuroPreMappedSystem::initDeviceContainer()
     saw_boot_or_preop[node_id] = false;
 
     auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
-      // Heartbeat state byte mapping:
-      // 0x00 = Boot-up, 0x7F = Pre-operational, 0x05 = Operational, 0x04 = Stopped
       const uint8_t s = static_cast<uint8_t>(nmt_state);
+      std::cout << "Got message. ID: " << (int)id <<", STATE: " << getStateString(nmt_state) << "(" << (int)s << ")" << std::endl;
 
-      if (s == 0x00 || s == 0x7F) {
+      if(nmt_state == canopen::NmtState::PREOP || nmt_state == canopen::NmtState::START)
+      {
         std::lock_guard<std::mutex> lk(nmt_mtx);
         saw_boot_or_preop[id] = true;
         nmt_cv.notify_all();
@@ -95,12 +136,11 @@ void FuroPreMappedSystem::initDeviceContainer()
   }
 
   RCLCPP_INFO_STREAM(kLogger, "Resetting Application ...");
-  rclcpp::sleep_for(std::chrono::milliseconds(100));
   can_master->Command(lely::canopen::NmtCommand::RESET_NODE, 0x00);
   // Wait for boot-up / pre-op from all tracked nodes (timeout)
   {
     std::unique_lock<std::mutex> lk(nmt_mtx);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
 
     bool ok = nmt_cv.wait_until(lk, deadline, [&]() {
       for (const auto &kv : saw_boot_or_preop) {
@@ -110,43 +150,19 @@ void FuroPreMappedSystem::initDeviceContainer()
     });
 
     if (!ok) {
-      RCLCPP_ERROR_STREAM(kLogger, "Timeout waiting for Boot-up/Pre-op after RESET_NODE");
+      RCLCPP_ERROR_STREAM(kLogger, "Timeout waiting for Boot-up/Pre-op/Start after RESET_NODE");
+
     } else {
-      RCLCPP_INFO_STREAM(kLogger, "Boot-up/Pre-op observed for all nodes after RESET_NODE");
+      RCLCPP_INFO_STREAM(kLogger, "Boot-up/Pre-op/Start observed for all nodes after RESET_NODE");
     }
   }
-
+  std::this_thread::sleep_for(5000ms); // Keep this.
+  
   RCLCPP_INFO_STREAM(kLogger, "Resetting CANopen communication ...");
-  // Reset tracking flags for the next reset
-  {
-    std::lock_guard<std::mutex> lk(nmt_mtx);
-    for (auto &kv : saw_boot_or_preop) 
-    {
-      kv.second = false;
-    }
-  }
-
   can_master->Command(lely::canopen::NmtCommand::RESET_COMM, 0x00);
-
-  // Wait again (timeout)
-  {
-    std::unique_lock<std::mutex> lk(nmt_mtx);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-
-    bool ok = nmt_cv.wait_until(lk, deadline, [&]() {
-      for (const auto &kv : saw_boot_or_preop) {
-        if (!kv.second) return false;
-      }
-      return true;
-    });
-
-    if (!ok) {
-      RCLCPP_ERROR_STREAM(kLogger, "Timeout waiting for Boot-up/Pre-op after RESET_COMM");
-    } else {
-      RCLCPP_INFO_STREAM(kLogger, "Boot-up/Pre-op observed for all nodes after RESET_COMM");
-    }
-  }
-
+  std::this_thread::sleep_for(2000ms); // Keep this.
+  
+  RCLCPP_INFO_STREAM(kLogger, "Configure Devices...");
   for (auto it = drivers.begin(); it != drivers.end(); it++) {
     auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
     if (pre_mapped_driver) {
@@ -325,7 +341,13 @@ hardware_interface::return_type FuroPreMappedSystem::write(
     if (pre_mapped_driver != nullptr && motor_running_) {
       auto joint_name = pre_mapped_driver->get_motor_joint_name();
       double target_velocity = motor_data_[joint_name].target_velocity;
-      pre_mapped_driver->set_target(target_velocity, rollover);
+      bool success = pre_mapped_driver->set_target(target_velocity, rollover);
+      if(!success)
+      {
+        // what to do here?
+
+        // initDeviceContainer();
+      }
     }
   }
   rollover++;

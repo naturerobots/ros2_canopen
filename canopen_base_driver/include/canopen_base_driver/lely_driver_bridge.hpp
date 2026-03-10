@@ -582,7 +582,9 @@ public:
     }
     catch (std::exception& e)
     {
-      RCLCPP_ERROR(rclcpp::get_logger(name_), e.what());
+      rclcpp::Clock clock(RCL_SYSTEM_TIME);
+      RCLCPP_ERROR_THROTTLE(rclcpp::get_logger(name_), clock, 1000, "Error in async sdo read. Might be due to network communication overload.");
+      RCLCPP_DEBUG(rclcpp::get_logger(name_), e.what());
       res = false;
     }
     return res;

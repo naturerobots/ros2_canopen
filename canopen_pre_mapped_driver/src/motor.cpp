@@ -127,9 +127,20 @@ bool PreMappedMotor::handleRecover()
 bool PreMappedMotor::isFaulty()
 {
   if (this->driver != nullptr) {
-    uint16_t error_sub_ = this->driver->universal_get_value<uint16_t>(0x3841, 0);
+    uint16_t error_sub_;
+
+    try {
+      error_sub_ = this->driver->universal_get_value<uint16_t>(0x3841, 0);
+    } catch(const std::runtime_error& ex) {
+      rclcpp::Clock clock(RCL_SYSTEM_TIME);
+      RCLCPP_ERROR_THROTTLE(rclcpp::get_logger("canopen_402_driver"), clock, 1000, "Error code not readable. universal_get_value -> std::runtime_error: ", ex.what());
+      return true;
+    }
+
     if (error_sub_ != 0) {
-      RCLCPP_ERROR_ONCE(rclcpp::get_logger("canopen_402_driver"), "Register error code %d", error_sub_);
+      rclcpp::Clock clock(RCL_SYSTEM_TIME);
+      RCLCPP_ERROR_THROTTLE(rclcpp::get_logger("canopen_402_driver"), clock, 1000, "“Shared Line Contactor error. Error code %d", error_sub_);
+      // rclcpp::shutdown();
       return true;
     }
   }

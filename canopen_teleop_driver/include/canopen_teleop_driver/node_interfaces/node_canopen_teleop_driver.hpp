@@ -40,8 +40,11 @@ protected:
   float turning_stick_amplitude_;
   uint8_t drive_mode_; // 0b0001: MAN,     0b0010: COST,     0b0100: AUTO
   uint8_t direction_;  // 0b0001: FORWARD, 0b0010: BACKWARD, 0b0100: RIGHT, 0b1000: LEFT
-  rclcpp::Time last_control_; // Timestamp of the last control command
-
+  rclcpp::Time last_control_; // Timestamp of the last control input received
+  rclcpp::Time last_publish_; // Timestamp of the last published control command
+  rclcpp::Duration publish_interval_ = rclcpp::Duration::from_seconds(0.005); // Minimum interval between publishes
+  rclcpp::Duration control_timeout_ = rclcpp::Duration::from_seconds(1.0); // Time after which we consider the control input to be outdated
+  
   float linear_speed_scale_ = 1.0;   // Scale for linear speed
   float angular_speed_scale_ = 0.5 * 3.14; // Scale for angular speed
 
@@ -49,6 +52,9 @@ protected:
 
   void publish_stop_cmd();
   void publish_control_cmd();
+  bool ready_to_publish() const;
+  bool command_is_not_to_old() const;
+
 
 public:
   NodeCanopenTeleopDriver(NODETYPE * node);

@@ -156,11 +156,11 @@ void FuroPreMappedSystem::initDeviceContainer()
       RCLCPP_INFO_STREAM(kLogger, "Boot-up/Pre-op/Start observed for all nodes after RESET_NODE");
     }
   }
-  std::this_thread::sleep_for(5000ms); // Keep this.
+  std::this_thread::sleep_for(2000ms); // Keep this.
   
   RCLCPP_INFO_STREAM(kLogger, "Resetting CANopen communication ...");
   can_master->Command(lely::canopen::NmtCommand::RESET_COMM, 0x00);
-  std::this_thread::sleep_for(2000ms); // Keep this.
+  std::this_thread::sleep_for(1000ms); // Keep this.
   
   RCLCPP_INFO_STREAM(kLogger, "Configure Devices...");
   for (auto it = drivers.begin(); it != drivers.end(); it++) {

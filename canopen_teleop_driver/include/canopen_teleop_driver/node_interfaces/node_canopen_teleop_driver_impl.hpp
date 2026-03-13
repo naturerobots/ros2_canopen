@@ -57,14 +57,14 @@ template<>
 void NodeCanopenTeleopDriver<rclcpp::Node>::setupRosInterfaces()
 {
   twist_cmd_publisher_ = this->node_->create_publisher<geometry_msgs::msg::TwistStamped>(
-    std::string(this->node_->get_name()).append("/cmd_vel").c_str(), 10);
+    std::string(this->node_->get_name()).append("/cmd_vel").c_str(), 1);
 }
 
 template<>
 void NodeCanopenTeleopDriver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces()
 {
   twist_cmd_publisher_ = this->node_->create_publisher<geometry_msgs::msg::TwistStamped>(
-    std::string(this->node_->get_name()).append("/cmd_vel").c_str(), 10);
+    std::string(this->node_->get_name()).append("/cmd_vel").c_str(), 1);
 }
 
 template<class NODETYPE>
@@ -90,6 +90,7 @@ void NodeCanopenTeleopDriver<NODETYPE>::activate(bool called_from_base)
   drive_mode_ = 0;
   direction_ = 0;
   last_control_ = this->node_->now();
+  last_publish_ = this->node_->now();
 }
 
 template<class NODETYPE>
@@ -104,6 +105,7 @@ void NodeCanopenTeleopDriver<NODETYPE>::deactivate(bool called_from_base)
   drive_mode_ = 0;
   direction_ = 0;
   last_control_ = this->node_->now();
+  last_publish_ = this->node_->now();
 }
 
 template<class NODETYPE>
@@ -146,11 +148,14 @@ void NodeCanopenTeleopDriver<NODETYPE>::on_rpdo(COData d)
         last_control_ = this->node_->now();
       }
     }
-    if (not remote_online_) {
-      this->publish_stop_cmd();
-    } else if (this->node_->now() - last_control_ < rclcpp::Duration::from_seconds(1.0)) {
-      // If we received a control command recently, publish the control command
-      this->publish_control_cmd();
+    if (ready_to_publish()) {
+      if (not remote_online_) {
+        this->publish_stop_cmd();
+      } else if (command_is_not_to_old()) {
+        // If we received a control command recently, publish the control command
+        this->publish_control_cmd();
+      }
+      this->last_publish_ = this->node_->now();
     }
   }
 }
@@ -197,6 +202,18 @@ void NodeCanopenTeleopDriver<NODETYPE>::publish_control_cmd()
 
     twist_cmd_publisher_->publish(message);
   }
+}
+
+template<class NODETYPE>
+bool NodeCanopenTeleopDriver<NODETYPE>::ready_to_publish() const 
+{
+  return this->node_->now() - last_publish_ >= publish_interval_;
+}
+
+template<class NODETYPE>
+bool NodeCanopenTeleopDriver<NODETYPE>::command_is_not_to_old() const 
+{
+  return this->node_->now() - last_control_ < control_timeout_;
 }
 
 #endif  // NODE_CANOPEN_TELEOP_DRIVER_IMPL_HPP_false

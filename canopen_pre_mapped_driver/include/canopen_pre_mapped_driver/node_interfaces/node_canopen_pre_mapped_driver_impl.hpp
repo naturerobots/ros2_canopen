@@ -55,10 +55,10 @@ void NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>::init(bool call
 template<>
 void NodeCanopenPreMappedDriver<rclcpp::Node>::setupRosInterfaces(const std::string & joint_name)
 {
-  publish_joint_state =
-    this->node_->create_publisher<sensor_msgs::msg::JointState>(
-    "~/" + joint_name + "/joint_states",
-    10);
+  // publish_joint_state =
+  //   this->node_->create_publisher<sensor_msgs::msg::JointState>(
+  //   "~/" + joint_name + "/joint_states",
+  //   10);
 
   handle_init_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/init",
@@ -87,10 +87,10 @@ template<>
 void NodeCanopenPreMappedDriver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(
   const std::string & joint_name)
 {
-  publish_joint_state =
-    this->node_->create_publisher<sensor_msgs::msg::JointState>(
-    "~/" + joint_name + "/joint_states",
-    10);
+  // publish_joint_state =
+  //   this->node_->create_publisher<sensor_msgs::msg::JointState>(
+  //   "~/" + joint_name + "/joint_states",
+  //   10);
 
   handle_init_service = this->node_->create_service<std_srvs::srv::Trigger>(
     "~/" + joint_name + "/init",
@@ -195,7 +195,7 @@ void NodeCanopenPreMappedDriver<NODETYPE>::configure_device()
     // Set producer heartbeat time to 100 ms
     this->lely_driver_->async_sdo_write_typed(0x1017, 0x00, 0x64);
     // Set consumer heartbeat time to 300 ms
-    this->lely_driver_->async_sdo_write_typed(0x1016, 0x01, 0x012C);
+    // this->lely_driver_->async_sdo_write_typed(0x1016, 0x01, 0x012C);
     RCLCPP_INFO_STREAM(
       this->node_->get_logger(),
       "Successfully set SDOs for node ID: " << static_cast<int>(node_id));
@@ -257,7 +257,7 @@ void NodeCanopenPreMappedDriver<NODETYPE>::poll_timer_callback()
   if (motor_ && motor_->isInitialized()) {
     motor_->handleRead();
     motor_->handleWrite();
-    publish();
+    // publish();
   }
 }
 
@@ -266,10 +266,10 @@ void NodeCanopenPreMappedDriver<NODETYPE>::publish()
 {
   sensor_msgs::msg::JointState js_msg;
   js_msg.name.push_back(motor_->getJointName());
-  js_msg.position.push_back(motor_->get_position());
-  js_msg.velocity.push_back(motor_->get_speed());
-  js_msg.effort.push_back(0.0);
-  publish_joint_state->publish(js_msg);
+  // // js_msg.position.push_back(motor_->get_position());
+  // js_msg.velocity.push_back(motor_->get_speed());
+  // js_msg.effort.push_back(0.f);
+  // publish_joint_state->publish(js_msg);
 }
 
 template<class NODETYPE>
@@ -353,7 +353,7 @@ template<class NODETYPE>
 bool NodeCanopenPreMappedDriver<NODETYPE>::set_target(double target, uint8_t rollover)
 {
   if (this->activated_.load()) {
-    if (motor_ && !motor_->isFaulty()) {
+    if (motor_ && motor_->isInitialized()) {
       return motor_->setTarget(target, rollover);
     } else {
       RCLCPP_WARN_THROTTLE(this->node_->get_logger(), *(this->node_->get_clock()), 1000, "Motor is not initialized. Cannot set target.");

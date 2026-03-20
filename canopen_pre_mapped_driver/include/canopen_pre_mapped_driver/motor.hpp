@@ -170,10 +170,15 @@ public:
     if (speed_feedback_index != 0) {
       try {
         double value =
-          this->driver->universal_get_value<int32_t>(
+          this->driver->universal_get_value<int16_t>(
           speed_feedback_index,
           0) * scale_vel_from_dev_;
         has_communication_failure_ = false;
+        // if (joint_name_.find("right") != std::string::npos){
+        //   return - value;
+        // } else {
+        //   return value;
+        // }
         return value;
       } catch (std::runtime_error & e) {
         // communication was unsuccessful

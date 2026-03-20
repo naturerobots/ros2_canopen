@@ -82,7 +82,7 @@ bool PreMappedMotor::handleInit()
 {
   status_word_entry_index = 0x6041;
   control_word_entry_index = 0x6040;
-  speed_feedback_index = 0x606C;
+  speed_feedback_index = 0x3832;
   position_feedback_index = 0x6064;
 
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Read State");
@@ -140,8 +140,7 @@ bool PreMappedMotor::isFaulty()
     if (error_sub_ != 0) {
       rclcpp::Clock clock(RCL_SYSTEM_TIME);
       RCLCPP_ERROR_THROTTLE(rclcpp::get_logger("canopen_402_driver"), clock, 1000, "“Shared Line Contactor error. Error code %d", error_sub_);
-      // rclcpp::shutdown();
-      return true;
+      return false;
     }
   }
   return false;

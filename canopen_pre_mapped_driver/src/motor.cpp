@@ -140,7 +140,8 @@ bool PreMappedMotor::isFaulty()
     if (error_sub_ != 0) {
       rclcpp::Clock clock(RCL_SYSTEM_TIME);
       RCLCPP_ERROR_THROTTLE(rclcpp::get_logger("canopen_402_driver"), clock, 1000, "“Shared Line Contactor error. Error code %d", error_sub_);
-      return false;
+      // rclcpp::shutdown();
+      return true;
     }
   }
   return false;

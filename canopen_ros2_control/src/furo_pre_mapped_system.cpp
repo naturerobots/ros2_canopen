@@ -309,23 +309,23 @@ hardware_interface::return_type FuroPreMappedSystem::read(
   auto ret_val = CanopenSystem::read(time, period);
 
   // read values and write them to joint interface
-  //
-  // auto drivers = device_container_->get_registered_drivers();
+  
+  auto drivers = device_container_->get_registered_drivers();
 
-  // for (auto it = drivers.begin(); it != drivers.end(); ++it) {
-  //   auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
+  for (auto it = drivers.begin(); it != drivers.end(); ++it) {
+    auto pre_mapped_driver = std::dynamic_pointer_cast<ros2_canopen::PreMappedDriver>(it->second);
 
-  //   if (pre_mapped_driver != nullptr && motor_running_) {
-  //     auto joint_name = pre_mapped_driver->get_motor_joint_name();
+    if (pre_mapped_driver != nullptr && motor_running_) {
+      auto joint_name = pre_mapped_driver->get_motor_joint_name();
 
-  //     // get position
-  //     motor_data_[joint_name].actual_position =
-  //       pre_mapped_driver->get_position();
-  //     // get speed
-  //     motor_data_[joint_name].actual_speed =
-  //       pre_mapped_driver->get_speed();
-  //   }
-  // }
+      // get position
+      // motor_data_[joint_name].actual_position =
+      //   pre_mapped_driver->get_position();
+
+      // get speed
+      motor_data_[joint_name].actual_speed = pre_mapped_driver->get_speed();
+      }
+  }
 
   return ret_val;
 }

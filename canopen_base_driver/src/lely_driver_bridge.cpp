@@ -117,9 +117,9 @@ void LelyDriverBridge::OnRpdoWrite(uint16_t idx, uint8_t subidx) noexcept
   lely::COSub * sub = this->dictionary_->find(idx, subidx);
   if (sub == nullptr)
   {
-    std::cout << "OnRpdoWrite: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-              << (unsigned int)idx << " subindex=" << (unsigned int)subidx
-              << " object does not exist" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger(name_),
+        "OnRpdoWrite: id=%u index=0x%x subindex=%u object does not exist",
+        (unsigned int)this->get_id(), (unsigned int)idx, (unsigned int)subidx);
     return;
   }
   uint8_t co_def = (uint8_t)sub->getType();
@@ -191,9 +191,9 @@ std::future<bool> LelyDriverBridge::async_sdo_write(COData data)
   lely::COSub * sub = this->dictionary_->find(data.index_, data.subindex_);
   if (sub == nullptr)
   {
-    std::cout << "async_sdo_write: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-              << (unsigned int)data.index_ << " subindex=" << (unsigned int)data.subindex_
-              << " object does not exist" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger(name_),
+        "async_sdo_write: id=%u index=0x%x subindex=%u object does not exist",
+        (unsigned int)this->get_id(), (unsigned int)data.index_, (unsigned int)data.subindex_);
     this->sdo_write_data_promise->set_value(false);
     this->running = false;
     return sdo_write_data_promise->get_future();
@@ -250,9 +250,9 @@ std::future<COData> LelyDriverBridge::async_sdo_read(COData data)
   lely::COSub * sub = this->dictionary_->find(data.index_, data.subindex_);
   if (sub == nullptr)
   {
-    std::cout << "async_sdo_read: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-              << (unsigned int)data.index_ << " subindex=" << (unsigned int)data.subindex_
-              << " object does not exist" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger(name_),
+        "async_sdo_read: id=%u index=0x%x subindex=%u object does not exist",
+        (unsigned int)this->get_id(), (unsigned int)data.index_, (unsigned int)data.subindex_);
     try
     {
       throw lely::canopen::SdoError(
@@ -320,9 +320,9 @@ void LelyDriverBridge::tpdo_transmit(COData data)
   lely::COSub * sub = this->dictionary_->find(data.index_, data.subindex_);
   if (sub == nullptr)
   {
-    std::cout << "async_pdo_write: id=" << (unsigned int)get_id() << " index=0x" << std::hex
-              << (unsigned int)data.index_ << " subindex=" << (unsigned int)data.subindex_
-              << " object does not exist" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger(name_),
+        "async_pdo_write: id=%u index=0x%x subindex=%u object does not exist",
+        (unsigned int)get_id(), (unsigned int)data.index_, (unsigned int)data.subindex_);
     return;
   }
   uint8_t co_def = (uint8_t)sub->getType();
@@ -377,15 +377,15 @@ void LelyDriverBridge::tpdo_transmit(COData data)
       sub->setVal<CO_DEFTYPE_INTEGER32>(val);
     }
     tpdo_mapped[data.index_][data.subindex_].WriteEvent();
-    std::cout << "async_pdo_write: id=" << (unsigned int)get_id() << " index=0x" << std::hex
-              << (unsigned int)data.index_ << " subindex=" << (unsigned int)data.subindex_
-              << " data:" << (uint32_t)data.data_ << std::endl;
+    RCLCPP_DEBUG(rclcpp::get_logger(name_),
+        "async_pdo_write: id=%u index=0x%x subindex=%u data:%u",
+        (unsigned int)get_id(), (unsigned int)data.index_, (unsigned int)data.subindex_, (uint32_t)data.data_);
   }
   catch (lely::canopen::SdoError & e)
   {
-    std::cout << "async_pdo_write: id=" << (unsigned int)get_id() << " index=0x" << std::hex
-              << (unsigned int)data.index_ << " subindex=" << (unsigned int)data.subindex_
-              << e.what() << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger(name_),
+        "async_pdo_write: id=%u index=0x%x subindex=%u %s",
+        (unsigned int)get_id(), (unsigned int)data.index_, (unsigned int)data.subindex_, e.what());
     return;
   }
 }

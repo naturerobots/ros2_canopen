@@ -135,8 +135,8 @@ public:
         mapping.is_rpdo = true;
         mapping.is_tpdo = false;
         (*map)[tmpi][tmps] = mapping;
-        std::cout << "Found rpdo mapped object: index=" << std::hex << (int)tmpi << " subindex=" << (int)tmps
-                  << std::endl;
+        RCLCPP_DEBUG(rclcpp::get_logger("canopen_pdo"),
+            "Found rpdo mapped object: index=0x%x subindex=%d", tmpi, tmps);
       }
     }
   }
@@ -166,8 +166,8 @@ public:
         mapping.is_rpdo = false;
         mapping.is_tpdo = true;
         (*map)[tmpi][tmps] = mapping;
-        std::cout << "Found tpdo mapped object: index=" << std::hex << (int)tmpi << " subindex=" << (int)tmps
-                  << std::endl;
+        RCLCPP_DEBUG(rclcpp::get_logger("canopen_pdo"),
+            "Found tpdo mapped object: index=0x%x subindex=%d", tmpi, tmps);
       }
     }
   }
@@ -218,7 +218,7 @@ public:
 
       if (tmps == subindex && tmpi == idx)
       {
-        std::cout << "Found object in pdo: " << (int)pdo << std::endl;
+        RCLCPP_DEBUG(rclcpp::get_logger("canopen_pdo"), "Found object in pdo: %d", pdo);
         return true;
       }
     }
@@ -447,8 +447,9 @@ public:
     lely::COSub* sub = this->dictionary_->find(idx, subidx);
     if (sub == nullptr)
     {
-      std::cout << "async_sdo_write_typed: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-                << (unsigned int)idx << " subindex=" << (unsigned int)subidx << " object does not exist" << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger(name_),
+          "async_sdo_write_typed: id=%u index=0x%x subindex=%u object does not exist",
+          (unsigned int)this->get_id(), (unsigned int)idx, (unsigned int)subidx);
       prom->set_value(false);
       this->running = false;
       this->sdo_cond.notify_one();
@@ -483,8 +484,9 @@ public:
     auto wait_res = fut.wait_for(timeout);
     if (wait_res == std::future_status::timeout)
     {
-      std::cout << "sync_sdo_write_typed: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-                << (unsigned int)idx << " subindex=" << (unsigned int)subidx << " timed out." << std::endl;
+      RCLCPP_WARN(rclcpp::get_logger(name_),
+          "sync_sdo_write_typed: id=%u index=0x%x subindex=%u timed out.",
+          (unsigned int)this->get_id(), (unsigned int)idx, (unsigned int)subidx);
       return false;
     }
     bool res = false;
@@ -528,8 +530,9 @@ public:
     lely::COSub* sub = this->dictionary_->find(idx, subidx);
     if (sub == nullptr)
     {
-      std::cout << "async_sdo_read: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex << (unsigned int)idx
-                << " subindex=" << (unsigned int)subidx << " object does not exist" << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger(name_),
+          "async_sdo_read: id=%u index=0x%x subindex=%u object does not exist",
+          (unsigned int)this->get_id(), (unsigned int)idx, (unsigned int)subidx);
       try
       {
         throw lely::canopen::SdoError(this->get_id(), idx, subidx, lely::canopen::SdoErrc::NO_OBJ);
@@ -570,8 +573,9 @@ public:
     auto wait_res = fut.wait_for(timeout);
     if (wait_res == std::future_status::timeout)
     {
-      std::cout << "sync_sdo_read_typed: id=" << (unsigned int)this->get_id() << " index=0x" << std::hex
-                << (unsigned int)idx << " subindex=" << (unsigned int)subidx << " timed out." << std::endl;
+      RCLCPP_WARN(rclcpp::get_logger(name_),
+          "sync_sdo_read_typed: id=%u index=0x%x subindex=%u timed out.",
+          (unsigned int)this->get_id(), (unsigned int)idx, (unsigned int)subidx);
       return false;
     }
     bool res = false;

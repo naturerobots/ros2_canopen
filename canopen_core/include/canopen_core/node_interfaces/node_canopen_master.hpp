@@ -85,6 +85,8 @@ protected:
   std::string master_dcf_;
   std::string master_bin_;
   std::string can_interface_name_;
+  int can_interface_retry_count_;
+  int can_interface_retry_delay_ms_;
 
   std::thread spinner_;
 
@@ -120,6 +122,8 @@ public:
     node_->declare_parameter("node_id", 0);
     node_->declare_parameter("non_transmit_timeout", 200);
     node_->declare_parameter("config", "");
+    node_->declare_parameter("can_interface_retry_count", 5);
+    node_->declare_parameter("can_interface_retry_delay_ms", 1000);
     this->init(true);
     this->initialised_.store(true);
     RCLCPP_DEBUG(node_->get_logger(), "init_end");
@@ -158,6 +162,8 @@ public:
     node_->get_parameter("node_id", node_id_);
     node_->get_parameter("non_transmit_timeout", non_transmit_timeout);
     node_->get_parameter("config", config);
+    node_->get_parameter("can_interface_retry_count", can_interface_retry_count_);
+    node_->get_parameter("can_interface_retry_delay_ms", can_interface_retry_delay_ms_);
 
     this->config_ = YAML::Load(config);
     this->non_transmit_timeout_ = std::chrono::milliseconds(non_transmit_timeout);
@@ -198,7 +204,37 @@ public:
 
     exec_ = std::make_shared<lely::ev::Executor>(loop_->get_executor());
     timer_ = std::make_unique<lely::io::Timer>(*poll_, *exec_, CLOCK_MONOTONIC);
-    ctrl_ = std::make_unique<lely::io::CanController>(can_interface_name_.c_str());
+
+    // Retry loop for CAN controller initialization
+    int retry_count = 0;
+    while (true)
+    {
+      try
+      {
+        ctrl_ = std::make_unique<lely::io::CanController>(can_interface_name_.c_str());
+        RCLCPP_INFO(node_->get_logger(), "Successfully connected to CAN interface '%s'",
+            can_interface_name_.c_str());
+        break;
+      }
+      catch (const std::system_error & e)
+      {
+        retry_count++;
+        if (retry_count > can_interface_retry_count_)
+        {
+          RCLCPP_ERROR(node_->get_logger(),
+              "Failed to connect to CAN interface '%s' after %d attempts: %s",
+              can_interface_name_.c_str(), retry_count, e.what());
+          throw MasterException(
+              "Activate: CAN interface '" + can_interface_name_ + "' not available: " + e.what());
+        }
+        RCLCPP_WARN(node_->get_logger(),
+            "CAN interface '%s' not available (%s). Retrying in %d ms... (attempt %d/%d)",
+            can_interface_name_.c_str(), e.what(), can_interface_retry_delay_ms_,
+            retry_count, can_interface_retry_count_);
+        std::this_thread::sleep_for(std::chrono::milliseconds(can_interface_retry_delay_ms_));
+      }
+    }
+
     chan_ = std::make_unique<lely::io::CanChannel>(*poll_, *exec_);
     chan_->open(*ctrl_);
 

@@ -514,7 +514,7 @@ bool Motor402::handleInit()
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Read State");
   if (!readState())
   {
-    std::cout << "Could not read motor state" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not read motor state");
     return false;
   }
   {
@@ -525,7 +525,7 @@ bool Motor402::handleInit()
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
   if (!switchState(State402::Operation_Enable))
   {
-    std::cout << "Could not enable motor" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enable motor");
     return false;
   }
 
@@ -559,7 +559,7 @@ bool Motor402::handleInit()
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Switch no mode");
   if (!switchMode(MotorBase::No_Mode))
   {
-    std::cout << "Could not enter no mode" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enter no mode");
     return false;
   }
 
@@ -589,7 +589,7 @@ bool Motor402::handleHalt()
     target_state_ = State402::Quick_Stop_Active;
     if (!Command402::setTransition(control_word_, state, State402::Quick_Stop_Active, 0))
     {
-      std::cout << "Could not quick stop" << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not quick stop");
       return false;
     }
   }
@@ -602,13 +602,13 @@ bool Motor402::handleRecover()
     std::scoped_lock lock(mode_mutex_);
     if (selected_mode_ && !selected_mode_->start())
     {
-      std::cout << "Could not restart mode." << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not restart mode.");
       return false;
     }
   }
   if (!switchState(State402::Operation_Enable))
   {
-    std::cout << "Could not enable motor" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enable motor");
     return false;
   }
   return true;

@@ -61,19 +61,20 @@ public:
     }
     catch (negative_overflow &)
     {
-      std::cout << "canopen_402 Command " << val
-                << " does not fit into target, clamping to min limit" << std::endl;
+      RCLCPP_WARN(rclcpp::get_logger("canopen_402_target"),
+          "Command %f does not fit into target, clamping to min limit", val);
       target_ = std::numeric_limits<T>::min();
     }
     catch (positive_overflow &)
     {
-      std::cout << "canopen_402 Command " << val
-                << " does not fit into target, clamping to max limit" << std::endl;
+      RCLCPP_WARN(rclcpp::get_logger("canopen_402_target"),
+          "Command %f does not fit into target, clamping to max limit", val);
       target_ = std::numeric_limits<T>::max();
     }
     catch (...)
     {
-      std::cout << "canopen_402 Was not able to cast command " << val << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("canopen_402_target"),
+          "Was not able to cast command %f", val);
       return false;
     }
 

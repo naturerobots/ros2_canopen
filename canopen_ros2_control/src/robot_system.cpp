@@ -105,10 +105,12 @@ hardware_interface::CallbackReturn RobotSystem::on_init(const hardware_interface
 
 hardware_interface::CallbackReturn RobotSystem::on_configure(const rclcpp_lifecycle::State& previous_state)
 {
-  executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions(), 2);
+  // ponytail: SingleThreadedExecutor reduces thread contention with controller_manager
+  executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
   device_container_ = std::make_shared<ros2_canopen::DeviceContainer>(executor_);
   executor_->add_node(device_container_);
 
+  // threads - spin must start before init as init needs executor callbacks
   spin_thread_ = std::make_unique<std::thread>(&RobotSystem::spin, this);
   init_thread_ = std::make_unique<std::thread>(&RobotSystem::initDeviceContainer, this);
 

@@ -27,6 +27,9 @@
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <chrono>
 #include <thread>
+#include <fstream>
+#include <filesystem>
+#include <sstream>
 
 namespace
 {
@@ -45,6 +48,17 @@ hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interfac
   if (CanopenSystem::on_init(info) != CallbackReturn::SUCCESS)
   {
     return CallbackReturn::ERROR;
+  }
+
+  // Parse joint parameters for position offset opt-in
+  for (const auto& joint : info.joints)
+  {
+    auto it = joint.parameters.find("enable_position_offset");
+    if (it != joint.parameters.end() && (it->second == "true" || it->second == "1"))
+    {
+      offset_enabled_joints_.insert(joint.name);
+      RCLCPP_INFO(kLogger, "Position offset enabled for joint: %s", joint.name.c_str());
+    }
   }
 
   return CallbackReturn::SUCCESS;
@@ -205,8 +219,43 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
       }
+
+      // Initialize offset to 0 for all joints
+      position_offsets_[motion_controller_driver->get_motor_joint_name(motor_channel)] = 0.0;
     }
   }
+
+  // Offsets will be initialized on first read() when positions are valid
+  offsets_initialized_ = false;
+
+  // Create service node and reset home service
+  service_node_ = std::make_shared<rclcpp::Node>("cia402_system_services");
+  reset_position_home_service_ = service_node_->create_service<std_srvs::srv::Trigger>(
+    "~/reset_position_home",
+    [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+           std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+      auto drivers = device_container_->get_registered_drivers();
+      for (auto it = drivers.begin(); it != drivers.end(); ++it)
+      {
+        auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+        for (auto channel : driver->get_available_motor_channels())
+        {
+          std::string joint = driver->get_motor_joint_name(channel);
+          // Only reset offset for enabled joints
+          if (offset_enabled_joints_.count(joint) == 0) continue;
+          double raw = driver->get_position(channel);
+          position_offsets_[joint] = -raw;
+        }
+      }
+      savePositionOffsets();
+      RCLCPP_INFO(kLogger, "Position home reset complete");
+      response->success = true;
+      response->message = "Position home reset complete";
+    });
+  executor_->add_node(service_node_);
+
+  last_offset_save_time_ = rclcpp::Clock().now();
+
   return CanopenSystem::on_activate(previous_state);
 }
 
@@ -232,11 +281,10 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
 
 hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
-  // TODO(anyone): read robot states
-
   auto ret_val = CanopenSystem::read(time, period);
 
   auto drivers = device_container_->get_registered_drivers();
+  bool any_enabled_joint_has_com_failure = false;
 
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -245,25 +293,52 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
     bool com_failure = false;
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
-      // get position
-      motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position =
-          motion_controller_driver->get_position(motor_channel);
-      // get speed
-      motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed =
-          motion_controller_driver->get_speed(motor_channel);
+      std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
+      double raw_position = motion_controller_driver->get_position(motor_channel);
 
-      // check for communication failure -> if com fails, motors will return weird position and speed values
-      com_failure |= motion_controller_driver->has_motor_communication_failure(motor_channel);
+      // Only apply offset for enabled joints
+      double offset = (offset_enabled_joints_.count(joint_name) > 0) ? position_offsets_[joint_name] : 0.0;
+      motor_data_[joint_name].actual_position = raw_position + offset;
+      motor_data_[joint_name].actual_speed = motion_controller_driver->get_speed(motor_channel);
+
+      // check for communication failure
+      if (motion_controller_driver->has_motor_communication_failure(motor_channel))
+      {
+        com_failure = true;
+        if (offset_enabled_joints_.count(joint_name) > 0)
+        {
+          any_enabled_joint_has_com_failure = true;
+        }
+      }
     }
 
     if (com_failure)
     {
-      // if we got weird position and speed values from the motors, just set the feedbacks to 0
       for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
       {
         motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_position = 0.0;
         motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].actual_speed = 0.0;
       }
+    }
+  }
+
+  // Initialize offsets on first successful read of all enabled joints
+  if (!offsets_initialized_ && !any_enabled_joint_has_com_failure && !offset_enabled_joints_.empty())
+  {
+    initializePositionOffsets();
+    offsets_initialized_ = true;
+    last_offset_save_time_ = rclcpp::Clock().now();
+  }
+
+  // Periodic save of position offsets (every 0.5s)
+  // ponytail: hardcoded interval, make configurable if needed
+  if (offsets_initialized_)
+  {
+    auto now = rclcpp::Clock().now();
+    if ((now - last_offset_save_time_).seconds() >= 0.5)
+    {
+      savePositionOffsets();
+      last_offset_save_time_ = now;
     }
   }
 
@@ -445,6 +520,7 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
+      std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
       const uint16_t& mode = motion_controller_driver->get_mode(motor_channel);
       switch (mode)
       {
@@ -453,21 +529,25 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         case MotorBase::Profiled_Position:
         case MotorBase::Cyclic_Synchronous_Position:
         case MotorBase::Interpolated_Position:
+        {
+          // Subtract offset only for enabled joints
+          double offset = (offset_enabled_joints_.count(joint_name) > 0) ? position_offsets_[joint_name] : 0.0;
           motion_controller_driver->set_target(
               motor_channel,
-              motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_position);
+              motor_data_[joint_name].target_position - offset);
           break;
+        }
         case MotorBase::Profiled_Velocity:
         case MotorBase::Velocity:
         case MotorBase::Cyclic_Synchronous_Velocity:
           motion_controller_driver->set_target(
               motor_channel,
-              motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_velocity);
+              motor_data_[joint_name].target_velocity);
           break;
         case MotorBase::Profiled_Torque:
         case MotorBase::Cyclic_Synchronous_Torque:
           motion_controller_driver->set_target(
-              motor_channel, motor_data_[motion_controller_driver->get_motor_joint_name(motor_channel)].target_torque);
+              motor_channel, motor_data_[joint_name].target_torque);
           break;
         default:
           RCLCPP_INFO(kLogger, "Mode %u not supported", mode);
@@ -477,6 +557,118 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
 
   return hardware_interface::return_type::OK;
 }
+
+// ponytail: hardcoded path, make configurable via hardware_parameters if needed
+static const std::string kOffsetFilePath = "/var/lib/ros2_canopen/position_offsets.txt";
+static constexpr double kOffsetTolerance = 0.1;  // radians
+
+bool Cia402System::loadPositionOffsets(std::map<std::string, double>& saved_raw, std::map<std::string, double>& saved_offsets)
+{
+  std::ifstream file(kOffsetFilePath);
+  if (!file.is_open()) return false;
+
+  std::string line;
+  while (std::getline(file, line))
+  {
+    std::istringstream iss(line);
+    std::string joint_name;
+    double raw, offset;
+    if (iss >> joint_name >> raw >> offset)
+    {
+      saved_raw[joint_name] = raw;
+      saved_offsets[joint_name] = offset;
+    }
+  }
+  return !saved_raw.empty();
+}
+
+void Cia402System::savePositionOffsets()
+{
+  std::filesystem::path file_path(kOffsetFilePath);
+  if (file_path.has_parent_path())
+  {
+    std::filesystem::create_directories(file_path.parent_path());
+  }
+
+  std::string tmp_path = kOffsetFilePath + ".tmp";
+  std::ofstream file(tmp_path);
+  if (!file.is_open())
+  {
+    RCLCPP_WARN_THROTTLE(kLogger, rclcpp::Clock(), 10000,
+      "Failed to open position offset file for writing: %s", tmp_path.c_str());
+    return;
+  }
+
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
+    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto channel : driver->get_available_motor_channels())
+    {
+      std::string joint_name = driver->get_motor_joint_name(channel);
+      // Only save offset-enabled joints
+      if (offset_enabled_joints_.count(joint_name) == 0) continue;
+      double raw = driver->get_position(channel);
+      file << joint_name << " " << raw << " " << position_offsets_[joint_name] << "\n";
+    }
+  }
+  file.close();
+
+  // ponytail: rename is atomic on POSIX, protects against power-loss corruption
+  std::rename(tmp_path.c_str(), kOffsetFilePath.c_str());
+}
+
+void Cia402System::initializePositionOffsets()
+{
+  std::map<std::string, double> saved_raw, saved_offsets;
+
+  if (!loadPositionOffsets(saved_raw, saved_offsets))
+  {
+    RCLCPP_INFO(kLogger, "No position offset file found, starting with zero offsets for enabled joints");
+    return;
+  }
+
+  auto drivers = device_container_->get_registered_drivers();
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
+    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    for (auto channel : driver->get_available_motor_channels())
+    {
+      std::string joint_name = driver->get_motor_joint_name(channel);
+
+      // Only process offset-enabled joints
+      if (offset_enabled_joints_.count(joint_name) == 0) continue;
+
+      if (saved_raw.find(joint_name) == saved_raw.end())
+      {
+        RCLCPP_WARN(kLogger, "No saved offset for joint %s, using 0", joint_name.c_str());
+        continue;
+      }
+
+      double current_raw = driver->get_position(channel);
+      double prev_raw = saved_raw[joint_name];
+      double prev_offset = saved_offsets[joint_name];
+
+      // Check if motors reset (cold start) or stayed on (warm restart)
+      if (std::abs(current_raw - prev_raw) < kOffsetTolerance)
+      {
+        // Warm restart: motors kept position, use saved offset
+        position_offsets_[joint_name] = prev_offset;
+        RCLCPP_INFO(kLogger, "Joint %s warm restart, offset: %.3f", joint_name.c_str(), prev_offset);
+      }
+      else
+      {
+        // Cold start: motors reset, calculate new offset
+        // saved_actual = prev_raw + prev_offset
+        // new_offset = saved_actual - current_raw
+        double saved_actual = prev_raw + prev_offset;
+        position_offsets_[joint_name] = saved_actual - current_raw;
+        RCLCPP_INFO(kLogger, "Joint %s cold start, new offset: %.3f", joint_name.c_str(), position_offsets_[joint_name]);
+      }
+    }
+  }
+}
+
 }  // namespace canopen_ros2_control
 
 #include "pluginlib/class_list_macros.hpp"

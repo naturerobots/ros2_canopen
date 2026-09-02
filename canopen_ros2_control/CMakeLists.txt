@@ -15,6 +15,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
   rclcpp_components
   rclcpp_lifecycle
+  std_srvs
 )
 
 find_package(ros2_control_test_assets)

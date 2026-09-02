@@ -404,12 +404,12 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
             RCLCPP_WARN_STREAM(kLogger, "CW fault reset timed out for "
                                             << motion_controller_driver->get_motor_joint_name(motor_channel)
                                             << ", escalating to NMT reset.");
-            motion_controller_driver->reset_node_nmt_command();
-            // The NMT command is fire-and-forget. Give the drive time to reset and reach
-            // Switch_On_Disabled before we attempt to bring it back to Operation_Enable.
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            motion_controller_driver->init_motor(motor_channel);
-            motion_controller_driver->set_default_operation_mode(motor_channel);
+            // motion_controller_driver->reset_node_nmt_command();
+            // // The NMT command is fire-and-forget. Give the drive time to reset and reach
+            // // Switch_On_Disabled before we attempt to bring it back to Operation_Enable.
+            // std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // motion_controller_driver->init_motor(motor_channel);
+            // motion_controller_driver->set_default_operation_mode(motor_channel);
           }
         }
       }

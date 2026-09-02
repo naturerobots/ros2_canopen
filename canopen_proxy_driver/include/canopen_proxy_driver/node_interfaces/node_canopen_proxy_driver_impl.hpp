@@ -35,6 +35,22 @@ void NodeCanopenProxyDriver<NODETYPE>::init(bool called_from_base)
 template <>
 void NodeCanopenProxyDriver<rclcpp::Node>::init(bool called_from_base)
 {
+  // Parse enable_ros_interfaces from config (defaults to true for backwards compatibility)
+  try
+  {
+    enable_ros_interfaces_ = this->config_["enable_ros_interfaces"].as<bool>();
+  }
+  catch (...)
+  {
+    enable_ros_interfaces_ = true;
+  }
+
+  if (!enable_ros_interfaces_)
+  {
+    RCLCPP_INFO(this->node_->get_logger(), "ROS interfaces disabled for %s", this->node_->get_name());
+    return;
+  }
+
   nmt_state_publisher = this->node_->create_publisher<std_msgs::msg::String>(
     std::string(this->node_->get_name()).append("/nmt_state").c_str(), 10);
   tpdo_subscriber = this->node_->create_subscription<canopen_interfaces::msg::COData>(
@@ -72,6 +88,22 @@ void NodeCanopenProxyDriver<rclcpp::Node>::init(bool called_from_base)
 template <>
 void NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::init(bool called_from_base)
 {
+  // Parse enable_ros_interfaces from config (defaults to true for backwards compatibility)
+  try
+  {
+    enable_ros_interfaces_ = this->config_["enable_ros_interfaces"].as<bool>();
+  }
+  catch (...)
+  {
+    enable_ros_interfaces_ = true;
+  }
+
+  if (!enable_ros_interfaces_)
+  {
+    RCLCPP_INFO(this->node_->get_logger(), "ROS interfaces disabled for %s", this->node_->get_name());
+    return;
+  }
+
   nmt_state_publisher = this->node_->create_publisher<std_msgs::msg::String>(
     std::string(this->node_->get_name()).append("/nmt_state").c_str(), 10);
   tpdo_subscriber = this->node_->create_subscription<canopen_interfaces::msg::COData>(
@@ -111,7 +143,7 @@ void NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::init(bool called_f
 template <class NODETYPE>
 void NodeCanopenProxyDriver<NODETYPE>::on_nmt(canopen::NmtState nmt_state)
 {
-  if (this->activated_.load())
+  if (this->activated_.load() && enable_ros_interfaces_)
   {
     auto message = std_msgs::msg::String();
 
@@ -195,7 +227,7 @@ bool NodeCanopenProxyDriver<NODETYPE>::tpdo_transmit(ros2_canopen::COData & data
 template <class NODETYPE>
 void NodeCanopenProxyDriver<NODETYPE>::on_rpdo(ros2_canopen::COData d)
 {
-  if (this->activated_.load())
+  if (this->activated_.load() && enable_ros_interfaces_)
   {
     // RCLCPP_INFO(
     //   this->node_->get_logger(), "Node ID 0x%X: Received PDO index %#04x, subindex %hhu, data

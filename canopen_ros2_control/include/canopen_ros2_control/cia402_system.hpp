@@ -89,6 +89,7 @@ protected:
   // Position offset handling for cold-start recovery
   std::map<std::string, double> position_offsets_;
   std::set<std::string> offset_enabled_joints_;  // joints with enable_position_offset=true
+  std::string offset_file_path_ = "~/offsets.txt";
   bool offsets_initialized_ = false;
   rclcpp::Time last_offset_save_time_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_position_home_service_;

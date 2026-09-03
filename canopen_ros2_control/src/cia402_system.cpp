@@ -26,6 +26,7 @@
 #include "canopen_ros2_control/cia402_system.hpp"
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 #include <fstream>
 #include <filesystem>
@@ -60,6 +61,23 @@ hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interfac
       RCLCPP_INFO(kLogger, "Position offset enabled for joint: %s", joint.name.c_str());
     }
   }
+
+  // Read offset file path from hardware_parameters (optional, has default)
+  auto it = info.hardware_parameters.find("position_offset_file");
+  if (it != info.hardware_parameters.end() && !it->second.empty())
+  {
+    offset_file_path_ = it->second;
+  }
+  // Expand ~ to home directory
+  if (!offset_file_path_.empty() && offset_file_path_[0] == '~')
+  {
+    const char* home = std::getenv("HOME");
+    if (home)
+    {
+      offset_file_path_ = std::string(home) + offset_file_path_.substr(1);
+    }
+  }
+  RCLCPP_INFO(kLogger, "Position offset file: %s", offset_file_path_.c_str());
 
   return CallbackReturn::SUCCESS;
 }
@@ -584,13 +602,11 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
   return hardware_interface::return_type::OK;
 }
 
-// ponytail: hardcoded path, make configurable via hardware_parameters if needed
-static const std::string kOffsetFilePath = "/var/lib/ros2_canopen/position_offsets.txt";
 static constexpr double kOffsetTolerance = 0.1;  // radians
 
 bool Cia402System::loadPositionOffsets(std::map<std::string, double>& saved_raw, std::map<std::string, double>& saved_offsets)
 {
-  std::ifstream file(kOffsetFilePath);
+  std::ifstream file(offset_file_path_);
   if (!file.is_open()) return false;
 
   std::string line;
@@ -610,13 +626,13 @@ bool Cia402System::loadPositionOffsets(std::map<std::string, double>& saved_raw,
 
 void Cia402System::savePositionOffsets()
 {
-  std::filesystem::path file_path(kOffsetFilePath);
+  std::filesystem::path file_path(offset_file_path_);
   if (file_path.has_parent_path())
   {
     std::filesystem::create_directories(file_path.parent_path());
   }
 
-  std::string tmp_path = kOffsetFilePath + ".tmp";
+  std::string tmp_path = offset_file_path_ + ".tmp";
   std::ofstream file(tmp_path);
   if (!file.is_open())
   {
@@ -640,7 +656,7 @@ void Cia402System::savePositionOffsets()
   file.close();
 
   // ponytail: rename is atomic on POSIX, protects against power-loss corruption
-  std::rename(tmp_path.c_str(), kOffsetFilePath.c_str());
+  std::rename(tmp_path.c_str(), offset_file_path_.c_str());
 }
 
 void Cia402System::initializePositionOffsets()

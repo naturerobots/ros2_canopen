@@ -32,8 +32,20 @@ void NodeCanopenProxyDriver<NODETYPE>::init(bool called_from_base)
   RCLCPP_ERROR(this->node_->get_logger(), "Not init implemented.");
 }
 
+template <class NODETYPE>
+void NodeCanopenProxyDriver<NODETYPE>::configure(bool called_from_base)
+{
+  RCLCPP_ERROR(this->node_->get_logger(), "Not configure implemented.");
+}
+
 template <>
 void NodeCanopenProxyDriver<rclcpp::Node>::init(bool called_from_base)
+{
+  // ROS interfaces are now created in configure() where config is available
+}
+
+template <>
+void NodeCanopenProxyDriver<rclcpp::Node>::configure(bool called_from_base)
 {
   // Parse enable_ros_interfaces from config (defaults to true for backwards compatibility)
   try
@@ -87,6 +99,12 @@ void NodeCanopenProxyDriver<rclcpp::Node>::init(bool called_from_base)
 
 template <>
 void NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::init(bool called_from_base)
+{
+  // ROS interfaces are now created in configure() where config is available
+}
+
+template <>
+void NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::configure(bool called_from_base)
 {
   // Parse enable_ros_interfaces from config (defaults to true for backwards compatibility)
   try

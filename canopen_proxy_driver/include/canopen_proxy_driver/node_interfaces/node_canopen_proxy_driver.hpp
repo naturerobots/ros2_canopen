@@ -66,6 +66,7 @@ public:
   NodeCanopenProxyDriver(NODETYPE * node);
 
   virtual void init(bool called_from_base) override;
+  virtual void configure(bool called_from_base) override;
 
   virtual bool reset_node_nmt_command();
 

@@ -103,6 +103,23 @@ public:
     , has_communication_failure_(false)
   {
     this->driver = driver;
+    // Set feedback indices immediately so position/velocity can be read even before motor init
+    // ponytail: hardcoded CIA402 offsets per channel, matches handleInit
+    if (channel == 1)
+    {
+      position_feedback_index = 0x6064;
+      speed_feedback_index = 0x606C;
+    }
+    else if (channel == 2)
+    {
+      position_feedback_index = 0x6864;
+      speed_feedback_index = 0x686C;
+    }
+    else if (channel == 3)
+    {
+      position_feedback_index = 0x7064;
+      speed_feedback_index = 0x706C;
+    }
   }
 
   virtual bool setTarget(double val);
@@ -294,7 +311,7 @@ public:
 
   double get_speed()
   {
-    if (speed_feedback_index != 0)
+    if (speed_feedback_index != 0 && this->driver != nullptr)
     {
       try
       {
@@ -313,7 +330,7 @@ public:
 
   double get_position()
   {
-    if (position_feedback_index != 0)
+    if (position_feedback_index != 0 && this->driver != nullptr)
     {
       try
       {

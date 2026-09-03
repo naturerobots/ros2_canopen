@@ -29,6 +29,7 @@
 #include "canopen_402_driver/cia402_driver.hpp"
 #include "canopen_ros2_control/canopen_system.hpp"
 #include <std_srvs/srv/trigger.hpp>
+#include "canopen_ros2_control/srv/adjust_position_offset.hpp"
 #include <set>
 
 constexpr double kResponseOk = 1.0;
@@ -91,6 +92,7 @@ protected:
   bool offsets_initialized_ = false;
   rclcpp::Time last_offset_save_time_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_position_home_service_;
+  rclcpp::Service<canopen_ros2_control::srv::AdjustPositionOffset>::SharedPtr adjust_position_offset_service_;
   std::shared_ptr<rclcpp::Node> service_node_;
 
   void initializePositionOffsets();

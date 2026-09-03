@@ -253,6 +253,31 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
       response->success = true;
       response->message = "Position home reset complete";
     });
+
+  adjust_position_offset_service_ = service_node_->create_service<canopen_ros2_control::srv::AdjustPositionOffset>(
+    "~/adjust_position_offset",
+    [this](const std::shared_ptr<canopen_ros2_control::srv::AdjustPositionOffset::Request> request,
+           std::shared_ptr<canopen_ros2_control::srv::AdjustPositionOffset::Response> response) {
+      const std::string& joint = request->joint_name;
+
+      // Check if joint exists and has offset enabled
+      if (offset_enabled_joints_.count(joint) == 0)
+      {
+        response->success = false;
+        response->message = "Joint not found or offset not enabled: " + joint;
+        RCLCPP_WARN(kLogger, "Adjust offset failed: %s", response->message.c_str());
+        return;
+      }
+
+      position_offsets_[joint] += request->offset_delta;
+      savePositionOffsets();
+
+      RCLCPP_INFO(kLogger, "Adjusted offset for %s by %.4f, new offset: %.4f",
+                  joint.c_str(), request->offset_delta, position_offsets_[joint]);
+      response->success = true;
+      response->message = "Offset adjusted successfully";
+    });
+
   executor_->add_node(service_node_);
 
   last_offset_save_time_ = rclcpp::Clock().now();
@@ -595,8 +620,7 @@ void Cia402System::savePositionOffsets()
   std::ofstream file(tmp_path);
   if (!file.is_open())
   {
-    RCLCPP_WARN_THROTTLE(kLogger, rclcpp::Clock(), 10000,
-      "Failed to open position offset file for writing: %s", tmp_path.c_str());
+    RCLCPP_WARN(kLogger, "Failed to open position offset file for writing: %s", tmp_path.c_str());
     return;
   }
 

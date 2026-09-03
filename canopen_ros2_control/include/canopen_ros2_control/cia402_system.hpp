@@ -90,6 +90,7 @@ protected:
   std::map<std::string, double> position_offsets_;
   std::set<std::string> offset_enabled_joints_;  // joints with enable_position_offset=true
   std::string offset_file_path_ = "~/offsets.txt";
+  double cold_start_threshold_ = 0.1;  // radians, configurable via cold_start_threshold param
   bool offsets_initialized_ = false;
   rclcpp::Time last_offset_save_time_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_position_home_service_;

@@ -79,6 +79,16 @@ hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interfac
   }
   RCLCPP_INFO(kLogger, "Position offset file: %s", offset_file_path_.c_str());
 
+  // Read cold start threshold from hardware_parameters (optional, default 0.1 rad)
+  // If raw position changed more than this threshold since last save, assume cold start
+  // (motor lost power and position reset). Otherwise assume warm restart (motor kept position).
+  auto threshold_it = info.hardware_parameters.find("cold_start_threshold");
+  if (threshold_it != info.hardware_parameters.end() && !threshold_it->second.empty())
+  {
+    cold_start_threshold_ = std::stod(threshold_it->second);
+  }
+  RCLCPP_INFO(kLogger, "Cold start threshold: %.3f rad", cold_start_threshold_);
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -602,8 +612,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
   return hardware_interface::return_type::OK;
 }
 
-static constexpr double kOffsetTolerance = 0.1;  // radians
-
 bool Cia402System::loadPositionOffsets(std::map<std::string, double>& saved_raw, std::map<std::string, double>& saved_offsets)
 {
   std::ifstream file(offset_file_path_);
@@ -691,7 +699,7 @@ void Cia402System::initializePositionOffsets()
       double prev_offset = saved_offsets[joint_name];
 
       // Check if motors reset (cold start) or stayed on (warm restart)
-      if (std::abs(current_raw - prev_raw) < kOffsetTolerance)
+      if (std::abs(current_raw - prev_raw) < cold_start_threshold_)
       {
         // Warm restart: motors kept position, use saved offset
         position_offsets_[joint_name] = prev_offset;

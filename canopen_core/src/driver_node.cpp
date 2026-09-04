@@ -45,6 +45,8 @@ void CanopenDriver::init()
 
 void CanopenDriver::shutdown() { node_canopen_driver_->shutdown(); }
 
+void CanopenDriver::configure() { node_canopen_driver_->configure(); }
+
 void CanopenDriver::set_master(
   std::shared_ptr<lely::ev::Executor> exec, std::shared_ptr<lely::canopen::AsyncMaster> master)
 {
@@ -54,6 +56,8 @@ void CanopenDriver::set_master(
 void LifecycleCanopenDriver::init() { node_canopen_driver_->init(); }
 
 void LifecycleCanopenDriver::shutdown() { node_canopen_driver_->shutdown(); }
+
+void LifecycleCanopenDriver::configure() { node_canopen_driver_->configure(); }
 
 void LifecycleCanopenDriver::set_master(
   std::shared_ptr<lely::ev::Executor> exec, std::shared_ptr<lely::canopen::AsyncMaster> master)

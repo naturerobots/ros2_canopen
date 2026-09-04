@@ -219,12 +219,11 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 {
   auto drivers = device_container_->get_registered_drivers();
 
-  // Motor init with retry and delay between motors
+  // Motor init with retry on failure
   // NMT reset already done during driver boot (Boot() in add_to_master)
   // Write loop handles persistent failures with NMT reset escalation
   constexpr int max_init_retries = 3;
-  constexpr int inter_motor_delay_ms = 100;
-  constexpr int retry_delay_ms = 500;
+  constexpr int retry_delay_ms = 200;  // only on failure
 
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -276,9 +275,6 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
       // Initialize offset to 0 for all joints
       position_offsets_[joint_name] = 0.0;
-
-      // Delay between motors to reduce CAN bus congestion
-      std::this_thread::sleep_for(std::chrono::milliseconds(inter_motor_delay_ms));
     }
   }
 
@@ -544,6 +540,17 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
 
       // Check if we should escalate to NMT reset for this node
       auto& recovery = node_recovery_state_[node_id];
+
+      // Post-reset cooldown: wait before attempting init after NMT reset
+      constexpr int post_reset_cooldown_ms = 1000;
+      auto ms_since_reset = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - recovery.last_nmt_reset_time).count();
+      if (recovery.total_nmt_resets > 0 && ms_since_reset < post_reset_cooldown_ms)
+      {
+        // Still cooling down after NMT reset, skip this cycle
+        continue;
+      }
+
       bool should_nmt_reset = false;
 
       if (recovery.consecutive_init_failures >= kNmtResetFailureThreshold &&

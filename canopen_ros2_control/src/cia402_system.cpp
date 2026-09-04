@@ -450,7 +450,9 @@ bool Cia402System::is_motor_uninitialized()
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
-      if (!motion_controller_driver->is_motor_initialized(motor_channel))
+      // Check if motor is not initialized OR if mode switch failed (mode == 0)
+      if (!motion_controller_driver->is_motor_initialized(motor_channel) ||
+          motion_controller_driver->get_mode(motor_channel) == 0)
       {
         return true;
       }
@@ -492,6 +494,14 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
           motion_controller_driver->init_motor(motor_channel);
 
           RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
+                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
+          motion_controller_driver->set_default_operation_mode(motor_channel);
+        }
+        // Recovery for motors that are initialized but mode switch failed (mode == 0)
+        else if (motion_controller_driver->get_mode(motor_channel) == 0)
+        {
+          RCLCPP_WARN_STREAM(kLogger, "Motor initialized but mode is 0, retrying mode switch for "
                                           << it->first << " channel " << (int)motor_channel << " joint_name: "
                                           << motion_controller_driver->get_motor_joint_name(motor_channel));
           motion_controller_driver->set_default_operation_mode(motor_channel);

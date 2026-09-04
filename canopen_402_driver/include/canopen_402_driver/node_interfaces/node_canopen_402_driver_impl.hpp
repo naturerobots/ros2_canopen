@@ -55,6 +55,8 @@ void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::init(bool called_fro
 template <>
 void NodeCanopen402Driver<rclcpp::Node>::setupRosInterfaces(const std::string& joint_name, uint8_t channel)
 {
+  if (!this->enable_ros_interfaces_) return;
+
   publish_joint_state[channel] =
       this->node_->create_publisher<sensor_msgs::msg::JointState>("~/" + joint_name + "/joint_states", 10);
 
@@ -127,6 +129,8 @@ template <>
 void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(const std::string& joint_name,
                                                                                uint8_t channel)
 {
+  if (!this->enable_ros_interfaces_) return;
+
   publish_joint_state[channel] =
       this->node_->create_publisher<sensor_msgs::msg::JointState>("~/" + joint_name + "/joint_states", 10);
 
@@ -343,6 +347,8 @@ void NodeCanopen402Driver<NODETYPE>::poll_timer_callback()
 template <class NODETYPE>
 void NodeCanopen402Driver<NODETYPE>::publish()
 {
+  if (!this->enable_ros_interfaces_) return;
+
   for (const auto& motor : motors_)
   {
     sensor_msgs::msg::JointState js_msg;

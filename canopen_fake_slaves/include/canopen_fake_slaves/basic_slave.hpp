@@ -23,6 +23,7 @@
 #include <lely/io2/sys/sigset.hpp>
 #include <lely/io2/sys/timer.hpp>
 
+#include <memory>
 #include <thread>
 
 #include "canopen_fake_slaves/base_slave.hpp"
@@ -92,9 +93,39 @@ protected:
     ev::Loop loop(poll.get_poll());
     auto exec = loop.get_executor();
     io::Timer timer(poll, exec, CLOCK_MONOTONIC);
-    io::CanController ctrl(can_interface_name_.c_str());
+
+    // Retry loop for CAN controller initialization
+    std::unique_ptr<io::CanController> ctrl;
+    int retry_count = 0;
+    while (true)
+    {
+      try
+      {
+        ctrl = std::make_unique<io::CanController>(can_interface_name_.c_str());
+        RCLCPP_INFO(this->get_logger(), "Successfully connected to CAN interface '%s'",
+            can_interface_name_.c_str());
+        break;
+      }
+      catch (const std::system_error & e)
+      {
+        retry_count++;
+        if (retry_count > can_interface_retry_count_)
+        {
+          RCLCPP_ERROR(this->get_logger(),
+              "Failed to connect to CAN interface '%s' after %d attempts: %s",
+              can_interface_name_.c_str(), retry_count, e.what());
+          return;
+        }
+        RCLCPP_WARN(this->get_logger(),
+            "CAN interface '%s' not available (%s). Retrying in %d ms... (attempt %d/%d)",
+            can_interface_name_.c_str(), e.what(), can_interface_retry_delay_ms_,
+            retry_count, can_interface_retry_count_);
+        std::this_thread::sleep_for(std::chrono::milliseconds(can_interface_retry_delay_ms_));
+      }
+    }
+
     io::CanChannel chan(poll, exec);
-    chan.open(ctrl);
+    chan.open(*ctrl);
 
     auto sigset_ = lely::io::SignalSet(poll, exec);
     // Watch for Ctrl+C or process termination.

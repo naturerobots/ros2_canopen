@@ -40,6 +40,14 @@ public:
   virtual void init() = 0;
 
   /**
+   * @brief Configure the driver
+   *
+   * This function will configure the driver. It will be called
+   * after init() to load parameters and create ROS interfaces.
+   */
+  virtual void configure() = 0;
+
+  /**
    * @brief Set the master object
    *
    * This function will set the Canopen Master Objects that are
@@ -121,6 +129,14 @@ public:
    *
    */
   virtual void init() override;
+
+  /**
+   * @brief Configure the driver
+   *
+   * This function will configure the driver by calling configure()
+   * of the NodeCanopenDriverInterface.
+   */
+  virtual void configure() override;
 
   /**
    * @brief Set the master object
@@ -208,6 +224,14 @@ public:
    *
    */
   virtual void init() override;
+
+  /**
+   * @brief Configure the driver
+   *
+   * This function will configure the driver by calling configure()
+   * of the NodeCanopenDriverInterface.
+   */
+  virtual void configure() override;
 
   /**
    * @brief Set the master object

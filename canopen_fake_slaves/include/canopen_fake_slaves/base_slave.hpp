@@ -29,6 +29,8 @@ public:
     this->declare_parameter("node_id", 2);
     this->declare_parameter("slave_config", "slave.eds");
     this->declare_parameter("can_interface_name", "vcan0");
+    this->declare_parameter("can_interface_retry_count", 5);
+    this->declare_parameter("can_interface_retry_delay_ms", 1000);
     this->activated.store(false);
   }
 
@@ -47,6 +49,8 @@ protected:
   int node_id_;
   std::string slave_config_;
   std::string can_interface_name_;
+  int can_interface_retry_count_;
+  int can_interface_retry_delay_ms_;
   std::atomic<bool> activated;
 
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
@@ -64,6 +68,8 @@ protected:
     get_parameter("node_id", node_id_);
     get_parameter("slave_config", slave_config_);
     get_parameter("can_interface_name", can_interface_name_);
+    get_parameter("can_interface_retry_count", can_interface_retry_count_);
+    get_parameter("can_interface_retry_delay_ms", can_interface_retry_delay_ms_);
     run_thread = std::thread(std::bind(&BaseSlave::run, this));
     RCLCPP_INFO(this->get_logger(), "Reaching active state.");
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;

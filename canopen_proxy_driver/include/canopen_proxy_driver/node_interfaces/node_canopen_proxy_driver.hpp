@@ -38,6 +38,7 @@ protected:
   rclcpp::Service<canopen_interfaces::srv::CORead>::SharedPtr sdo_read_service;
   rclcpp::Service<canopen_interfaces::srv::COWrite>::SharedPtr sdo_write_service;
 
+  bool enable_ros_interfaces_{true};  // disable to reduce RMW overhead when using ros2_control
   std::mutex sdo_mtex;
 
   virtual void on_nmt(canopen::NmtState nmt_state) override;
@@ -65,6 +66,7 @@ public:
   NodeCanopenProxyDriver(NODETYPE * node);
 
   virtual void init(bool called_from_base) override;
+  virtual void configure(bool called_from_base) override;
 
   virtual bool reset_node_nmt_command();
 

@@ -28,6 +28,9 @@
 
 #include "canopen_402_driver/cia402_driver.hpp"
 #include "canopen_ros2_control/canopen_system.hpp"
+#include <std_srvs/srv/trigger.hpp>
+#include "canopen_ros2_control/srv/adjust_position_offset.hpp"
+#include <set>
 
 constexpr double kResponseOk = 1.0;
 constexpr double kResponseFail = 0.0;
@@ -82,6 +85,21 @@ public:
 protected:
   // motor data for each registered joint name
   std::map<std::string, MotorNodeData> motor_data_;
+
+  // Position offset handling for cold-start recovery
+  std::map<std::string, double> position_offsets_;
+  std::set<std::string> offset_enabled_joints_;  // joints with enable_position_offset=true
+  std::string offset_file_path_ = "~/offsets.txt";
+  double cold_start_threshold_ = 0.1;  // radians, configurable via cold_start_threshold param
+  bool offsets_initialized_ = false;
+  rclcpp::Time last_offset_save_time_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_position_home_service_;
+  rclcpp::Service<canopen_ros2_control::srv::AdjustPositionOffset>::SharedPtr adjust_position_offset_service_;
+  std::shared_ptr<rclcpp::Node> service_node_;
+
+  void initializePositionOffsets();
+  void savePositionOffsets();
+  bool loadPositionOffsets(std::map<std::string, double>& saved_raw, std::map<std::string, double>& saved_offsets);
 
   void stop_all_motors();
 

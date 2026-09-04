@@ -44,7 +44,7 @@ class DefaultHomingMode : public HomingMode
   bool error(const std::string & msg)
   {
     execute_ = false;
-    std::cout << msg << std::endl;
+    RCLCPP_DEBUG(rclcpp::get_logger("canopen_402_homing"), "%s", msg.c_str());
     return false;
   }
 

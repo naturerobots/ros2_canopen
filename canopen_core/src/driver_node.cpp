@@ -45,6 +45,12 @@ void CanopenDriver::init()
 
 void CanopenDriver::shutdown() { node_canopen_driver_->shutdown(); }
 
+void CanopenDriver::configure()
+{
+  // Note: init() already calls node_canopen_driver_->configure()
+  // This is here for interface compliance but typically not called separately
+}
+
 void CanopenDriver::set_master(
   std::shared_ptr<lely::ev::Executor> exec, std::shared_ptr<lely::canopen::AsyncMaster> master)
 {
@@ -54,6 +60,11 @@ void CanopenDriver::set_master(
 void LifecycleCanopenDriver::init() { node_canopen_driver_->init(); }
 
 void LifecycleCanopenDriver::shutdown() { node_canopen_driver_->shutdown(); }
+
+void LifecycleCanopenDriver::configure()
+{
+  // For lifecycle drivers, configure is called via on_configure callback
+}
 
 void LifecycleCanopenDriver::set_master(
   std::shared_ptr<lely::ev::Executor> exec, std::shared_ptr<lely::canopen::AsyncMaster> master)

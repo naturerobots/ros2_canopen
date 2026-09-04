@@ -162,7 +162,7 @@ public:
 
 protected:
   std::shared_ptr<ros2_canopen::DeviceContainer> device_container_;
-  std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;
+  std::shared_ptr<rclcpp::Executor> executor_;
   std::vector<Cia402Data> robot_motor_data_;
   std::string bus_config_;
   std::string master_config_;

@@ -145,11 +145,8 @@ hardware_interface::CallbackReturn Cia402System::on_configure(const rclcpp_lifec
   {
     init_thread_->join();
 
-    // Configure all drivers (loads config YAML and creates ROS interfaces if enabled)
-    auto drivers = device_container_->get_registered_drivers();
-    for (auto it = drivers.begin(); it != drivers.end(); it++) {
-        it->second->configure();
-    }
+    // Note: configure() is already called inside CanopenDriver::init()
+    // No need to call it separately here
   }
   else
   {

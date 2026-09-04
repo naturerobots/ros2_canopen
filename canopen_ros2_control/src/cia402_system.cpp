@@ -145,14 +145,11 @@ hardware_interface::CallbackReturn Cia402System::on_configure(const rclcpp_lifec
   {
     init_thread_->join();
 
-    // TODO(livanov93): see how to handle configure once LifecycleCia402Driver is introduced
-    /*
+    // Configure all drivers (loads config YAML and creates ROS interfaces if enabled)
     auto drivers = device_container_->get_registered_drivers();
     for (auto it = drivers.begin(); it != drivers.end(); it++) {
-        auto d = std::static_pointer_cast<ros2_canopen::LifecycleCia402Driver>(it->second);
-        d->configure();
+        it->second->configure();
     }
-    */
   }
   else
   {

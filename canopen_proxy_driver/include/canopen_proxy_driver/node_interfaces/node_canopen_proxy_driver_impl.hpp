@@ -47,13 +47,19 @@ void NodeCanopenProxyDriver<rclcpp::Node>::init(bool called_from_base)
 template <>
 void NodeCanopenProxyDriver<rclcpp::Node>::configure(bool called_from_base)
 {
+  // Call base driver configure first
+  NodeCanopenBaseDriver<rclcpp::Node>::configure(false);
+
   // Parse enable_ros_interfaces from config (defaults to true for backwards compatibility)
   try
   {
     enable_ros_interfaces_ = this->config_["enable_ros_interfaces"].as<bool>();
+    RCLCPP_INFO(this->node_->get_logger(), "enable_ros_interfaces = %s for %s",
+                enable_ros_interfaces_ ? "true" : "false", this->node_->get_name());
   }
-  catch (...)
+  catch (const std::exception& e)
   {
+    RCLCPP_ERROR(this->node_->get_logger(), "Failed to parse enable_ros_interfaces: %s, defaulting to true", e.what());
     enable_ros_interfaces_ = true;
   }
 
@@ -106,6 +112,9 @@ void NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::init(bool called_f
 template <>
 void NodeCanopenProxyDriver<rclcpp_lifecycle::LifecycleNode>::configure(bool called_from_base)
 {
+  // Call base driver configure first
+  NodeCanopenBaseDriver<rclcpp_lifecycle::LifecycleNode>::configure(false);
+
   // Parse enable_ros_interfaces from config (defaults to true for backwards compatibility)
   try
   {

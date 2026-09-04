@@ -50,6 +50,14 @@ struct MotorNodeData
   double target_torque;
 };
 
+// Tracks NMT reset recovery state per CANopen node (not per motor)
+struct NodeRecoveryState
+{
+  int consecutive_init_failures = 0;
+  std::chrono::steady_clock::time_point last_nmt_reset_time;
+  int total_nmt_resets = 0;
+};
+
 using namespace ros2_canopen;
 class Cia402System : public CanopenSystem
 {
@@ -108,6 +116,13 @@ protected:
   bool is_motor_faulty();
 
   bool is_motor_uninitialized();
+
+  // NMT reset recovery tracking per node
+  std::map<uint8_t, NodeRecoveryState> node_recovery_state_;
+  // ponytail: hardcoded thresholds, make configurable if needed
+  static constexpr int kNmtResetFailureThreshold = 10;   // failures before NMT reset
+  static constexpr int kNmtResetCooldownSeconds = 5;     // seconds between resets
+  static constexpr int kMaxNmtResetsPerSession = 5;      // prevent infinite loop
 
 private:
   void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);

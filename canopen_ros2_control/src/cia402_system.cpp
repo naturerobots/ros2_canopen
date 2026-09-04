@@ -218,33 +218,67 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
 hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
   auto drivers = device_container_->get_registered_drivers();
+
+  // Motor init with retry and delay between motors
+  // NMT reset already done during driver boot (Boot() in add_to_master)
+  // Write loop handles persistent failures with NMT reset escalation
+  constexpr int max_init_retries = 3;
+  constexpr int inter_motor_delay_ms = 100;
+  constexpr int retry_delay_ms = 500;
+
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
-      RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                                << motion_controller_driver->get_motor_joint_name(motor_channel));
-      if (!motion_controller_driver->init_motor(motor_channel))
+      std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
+      bool init_success = false;
+
+      for (int attempt = 1; attempt <= max_init_retries && !init_success; ++attempt)
       {
-        RCLCPP_ERROR_STREAM(kLogger, "Failed to init motor "
-                                         << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+        RCLCPP_INFO(kLogger, "Init motor %d channel %d joint: %s (attempt %d/%d)",
+                    it->first, (int)motor_channel, joint_name.c_str(), attempt, max_init_retries);
+
+        if (motion_controller_driver->init_motor(motor_channel))
+        {
+          RCLCPP_INFO(kLogger, "Set operation mode for motor %d channel %d joint: %s",
+                      it->first, (int)motor_channel, joint_name.c_str());
+
+          if (motion_controller_driver->set_default_operation_mode(motor_channel))
+          {
+            init_success = true;
+          }
+          else
+          {
+            RCLCPP_WARN(kLogger, "Failed to set operation mode for %s (attempt %d/%d)",
+                        joint_name.c_str(), attempt, max_init_retries);
+          }
+        }
+        else
+        {
+          RCLCPP_WARN(kLogger, "Failed to init motor %s (attempt %d/%d)",
+                      joint_name.c_str(), attempt, max_init_retries);
+        }
+
+        if (!init_success && attempt < max_init_retries)
+        {
+          RCLCPP_INFO(kLogger, "Retrying motor init for %s in %d ms...", joint_name.c_str(), retry_delay_ms);
+          std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+        }
       }
 
-      RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
-                                      << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                      << motion_controller_driver->get_motor_joint_name(motor_channel));
-      if (!motion_controller_driver->set_default_operation_mode(motor_channel))
+      if (!init_success)
       {
-        RCLCPP_ERROR_STREAM(kLogger, "Failed to set operation mode for motor "
-                                         << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                         << motion_controller_driver->get_motor_joint_name(motor_channel));
+        RCLCPP_ERROR(kLogger, "Motor %s failed to initialize after %d attempts - will retry in write loop",
+                     joint_name.c_str(), max_init_retries);
       }
 
       // Initialize offset to 0 for all joints
-      position_offsets_[motion_controller_driver->get_motor_joint_name(motor_channel)] = 0.0;
+      position_offsets_[joint_name] = 0.0;
+
+      // Delay between motors to reduce CAN bus congestion
+      std::this_thread::sleep_for(std::chrono::milliseconds(inter_motor_delay_ms));
     }
   }
 
@@ -475,41 +509,116 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     return hardware_interface::return_type::OK;
   }
 
-  // at least one motor is faulty
+  // at least one motor is uninitialized
   if (is_motor_uninitialized())
   {
     // stop all motors
     stop_all_motors();
 
-    // initialize all uninitialized motors
+    auto now = std::chrono::steady_clock::now();
+
+    // initialize all uninitialized motors with NMT reset escalation for persistent failures
     for (auto it = drivers.begin(); it != drivers.end(); ++it)
     {
+      uint8_t node_id = it->first;
       auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+
+      // Check if any motor on this node needs init
+      bool node_has_uninit_motor = false;
       for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
       {
+        if (!motion_controller_driver->is_motor_initialized(motor_channel) ||
+            motion_controller_driver->get_mode(motor_channel) == 0)
+        {
+          node_has_uninit_motor = true;
+          break;
+        }
+      }
+
+      if (!node_has_uninit_motor)
+      {
+        // This node is fine, reset its failure counter
+        node_recovery_state_[node_id].consecutive_init_failures = 0;
+        continue;
+      }
+
+      // Check if we should escalate to NMT reset for this node
+      auto& recovery = node_recovery_state_[node_id];
+      bool should_nmt_reset = false;
+
+      if (recovery.consecutive_init_failures >= kNmtResetFailureThreshold &&
+          recovery.total_nmt_resets < kMaxNmtResetsPerSession)
+      {
+        auto seconds_since_reset = std::chrono::duration_cast<std::chrono::seconds>(
+            now - recovery.last_nmt_reset_time).count();
+
+        if (seconds_since_reset >= kNmtResetCooldownSeconds)
+        {
+          should_nmt_reset = true;
+        }
+      }
+
+      if (should_nmt_reset)
+      {
+        RCLCPP_WARN(kLogger, "Node %d: %d consecutive init failures, escalating to NMT reset (%d/%d resets used)",
+                    node_id, recovery.consecutive_init_failures,
+                    recovery.total_nmt_resets + 1, kMaxNmtResetsPerSession);
+
+        motion_controller_driver->reset_node_nmt_command();
+        recovery.last_nmt_reset_time = now;
+        recovery.total_nmt_resets++;
+        recovery.consecutive_init_failures = 0;
+
+        // Skip init attempt this cycle - let node reset complete, try init next cycle
+        continue;
+      }
+
+      // Attempt normal motor init for this node
+      bool any_init_failed = false;
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+      {
+        std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
+
         if (!motion_controller_driver->is_motor_initialized(motor_channel))
         {
-          RCLCPP_INFO_STREAM(kLogger, "Init motor " << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                                    << motion_controller_driver->get_motor_joint_name(motor_channel));
-          motion_controller_driver->init_motor(motor_channel);
+          RCLCPP_INFO(kLogger, "Init motor %d channel %d joint: %s (node failures: %d)",
+                      node_id, (int)motor_channel, joint_name.c_str(),
+                      recovery.consecutive_init_failures);
 
-          RCLCPP_INFO_STREAM(kLogger, "Set operation mode for motor "
-                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
-          motion_controller_driver->set_default_operation_mode(motor_channel);
+          if (!motion_controller_driver->init_motor(motor_channel))
+          {
+            any_init_failed = true;
+            continue;
+          }
+
+          if (!motion_controller_driver->set_default_operation_mode(motor_channel))
+          {
+            any_init_failed = true;
+          }
         }
         // Recovery for motors that are initialized but mode switch failed (mode == 0)
         else if (motion_controller_driver->get_mode(motor_channel) == 0)
         {
-          RCLCPP_WARN_STREAM(kLogger, "Motor initialized but mode is 0, retrying mode switch for "
-                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
-          motion_controller_driver->set_default_operation_mode(motor_channel);
+          RCLCPP_WARN(kLogger, "Motor %s initialized but mode is 0, retrying mode switch",
+                      joint_name.c_str());
+          if (!motion_controller_driver->set_default_operation_mode(motor_channel))
+          {
+            any_init_failed = true;
+          }
         }
+      }
+
+      if (any_init_failed)
+      {
+        recovery.consecutive_init_failures++;
+      }
+      else
+      {
+        recovery.consecutive_init_failures = 0;
       }
     }
 
-    // dont to anything else
+    // dont do anything else
     return hardware_interface::return_type::OK;
   }
 

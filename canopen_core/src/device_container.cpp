@@ -15,6 +15,8 @@
 
 #include "canopen_core/device_container.hpp"
 #include "canopen_core/device_container_error.hpp"
+#include <thread>
+#include <chrono>
 
 using namespace ros2_canopen;
 
@@ -310,7 +312,46 @@ bool DeviceContainer::load_drivers()
         return false;
       }
       add_node_to_executor(registered_drivers_[node_id.value()]->get_node_base_interface());
-      registered_drivers_[node_id.value()]->init();
+
+      // Retry driver init on failure
+      constexpr int max_init_retries = 3;
+      constexpr int retry_delay_ms = 200;  // only on failure
+      bool init_success = false;
+
+      for (int attempt = 1; attempt <= max_init_retries; ++attempt)
+      {
+        try
+        {
+          registered_drivers_[node_id.value()]->init();
+          init_success = true;
+          break;
+        }
+        catch (const std::exception & e)
+        {
+          RCLCPP_WARN(
+            this->get_logger(),
+            "Driver init failed for %s (attempt %d/%d): %s",
+            it->c_str(), attempt, max_init_retries, e.what());
+
+          if (attempt < max_init_retries)
+          {
+            RCLCPP_INFO(
+              this->get_logger(),
+              "Retrying driver init for %s in %d ms...",
+              it->c_str(), retry_delay_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+          }
+        }
+      }
+
+      if (!init_success)
+      {
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "Driver init failed for %s after %d attempts",
+          it->c_str(), max_init_retries);
+        return false;
+      }
     }
   }
   return true;

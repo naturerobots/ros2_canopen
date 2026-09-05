@@ -19,7 +19,14 @@
 namespace
 {
 auto const kLogger = rclcpp::get_logger("MotionWatchdog");
-}
+
+// The watchdog reports through a diagnostics key, never by raising the summary level.
+// Consumers of the aggregated motor diagnostics - lero_teleop's scanreco remote among them -
+// treat *any* non-OK motor status as "system not ok" and drop the robot out of manual mode.
+// A suspicion is not worth that, and this cannot tell a wheel driven against an obstacle
+// apart from a dead drive. Pass true here only for a fault that is confirmed and permanent.
+constexpr bool kRaiseDiagnosticError = false;
+}  // namespace
 
 namespace canopen_ros2_control
 {
@@ -50,7 +57,7 @@ void MotionWatchdog::stop()
 }
 
 void MotionWatchdog::update(const std::shared_ptr<ros2_canopen::Cia402Driver>& driver, const std::string& joint_name,
-                            uint16_t node_id, uint8_t channel, double command, double speed, bool drive_ready,
+                            uint16_t node_id, uint8_t channel, double command, double position, bool drive_ready,
                             const rclcpp::Time& now)
 {
   if (!enabled_ || !driver)
@@ -61,51 +68,44 @@ void MotionWatchdog::update(const std::shared_ptr<ros2_canopen::Cia402Driver>& d
   std::lock_guard<std::mutex> lock(joints_mutex_);
   auto& joint = joints_[joint_name];
 
-  const bool motion_demanded = std::abs(command) > kCmdThreshold;
-  const bool moving = std::abs(speed) > kSpeedThreshold;
-
-  if (!motion_demanded || !drive_ready || moving)
+  // A steering axis is commanded a velocity permanently to hold its angle, and that holding
+  // command is noisy. A single sample below the gate disarms, so only a demand sustained past
+  // the gate for the whole window counts as "motion was expected here".
+  if (std::abs(command) <= kCmdThreshold || !drive_ready)
   {
-    // Clear the trip once the joint moved or the demand went away. A drive that merely
-    // dropped out of Operation enabled keeps its history, so the retry budget is not
-    // silently reset while it cycles through fault recovery.
-    if (moving || !motion_demanded)
-    {
-      if (joint.stalled)
-      {
-        RCLCPP_INFO(kLogger, "%s is moving again after %d repair attempt(s)", joint_name.c_str(),
-                    joint.repair_attempts);
-        driver->set_motor_motion_fault(channel, false, "");
-      }
-      joint.stalled = false;
-      joint.latched = false;
-      joint.repair_attempts = 0;
-    }
     joint.armed = false;
     return;
   }
 
-  // From here on: the joint is asked to move, the drive reports it can, nothing happens.
   if (!joint.armed)
   {
     joint.armed = true;
-    joint.nonzero_cmd_since = now;
+    joint.armed_at = now;
+    joint.armed_position = position;
     return;
   }
 
-  if ((now - joint.nonzero_cmd_since).seconds() < kTimeout)
+  // Any real movement proves the drive is receiving its setpoints. Restart the window.
+  if (std::abs(position - joint.armed_position) > kPositionEpsilon)
+  {
+    joint.armed_at = now;
+    joint.armed_position = position;
+    if (joint.reported || joint.repair_attempts > 0)
+    {
+      RCLCPP_INFO(kLogger, "%s is moving again", joint_name.c_str());
+      driver->set_motor_motion_status(channel, "", false);
+      joint.reported = false;
+      joint.repair_attempts = 0;
+    }
+    return;
+  }
+
+  if ((now - joint.armed_at).seconds() < kTimeout)
   {
     return;
   }
 
-  if (!joint.stalled)
-  {
-    joint.stalled = true;
-    RCLCPP_ERROR(kLogger, "%s commanded %.4f for %.2f s but is not moving", joint_name.c_str(), command, kTimeout);
-    driver->set_motor_motion_fault(channel, true, "commanded but not moving, checking RPDO configuration");
-  }
-
-  if (joint.latched || joint.repair_pending)
+  if (joint.repair_pending || joint.repair_attempts >= kMaxAttempts)
   {
     return;
   }
@@ -115,16 +115,8 @@ void MotionWatchdog::update(const std::shared_ptr<ros2_canopen::Cia402Driver>& d
     return;  // cooling down between attempts
   }
 
-  if (joint.repair_attempts >= kMaxAttempts)
-  {
-    joint.latched = true;
-    RCLCPP_ERROR(kLogger,
-                 "%s still not moving after %d repair attempts - giving up. The RPDO configuration is valid, so "
-                 "this is a mechanical blockage or a drive-internal protection.",
-                 joint_name.c_str(), joint.repair_attempts);
-    driver->set_motor_motion_fault(channel, true, "not moving, RPDO config valid - mechanical or drive-level stall");
-    return;
-  }
+  RCLCPP_WARN(kLogger, "%s commanded %.3f rad/s for %.1f s without moving - checking RPDO configuration",
+              joint_name.c_str(), command, kTimeout);
 
   joint.repair_attempts++;
   joint.last_attempt_time = now;
@@ -206,29 +198,31 @@ void MotionWatchdog::worker()
 
     const int repaired = repairRpdoCobIds(req.driver, req.node_id, req.joint_name);
 
-    std::string detail;
+    std::string status;
     if (repaired > 0)
     {
-      detail = "re-enabled " + std::to_string(repaired) + " disabled RPDO(s)";
-      RCLCPP_WARN(kLogger, "%s - %s, setpoints should reach the drive again", req.joint_name.c_str(), detail.c_str());
+      status = "re-enabled " + std::to_string(repaired) + " disabled RPDO(s)";
+      RCLCPP_WARN(kLogger, "%s - %s, setpoints should reach the drive again", req.joint_name.c_str(), status.c_str());
     }
     else if (repaired == 0)
     {
-      detail = "RPDO configuration valid, drive is receiving setpoints";
+      // The drive is receiving its setpoints, so this is not the RPDO failure. Most likely a
+      // blocked wheel or a drive-internal protection - reported, but not treated as a fault.
+      status = "commanded without moving, RPDO config valid";
+      RCLCPP_WARN(kLogger, "%s - %s (mechanical blockage or drive-level protection?)", req.joint_name.c_str(),
+                  status.c_str());
     }
     else
     {
-      detail = "could not read RPDO configuration over SDO";
-      RCLCPP_ERROR(kLogger, "%s - %s", req.joint_name.c_str(), detail.c_str());
+      status = "commanded without moving, RPDO config unreadable";
+      RCLCPP_ERROR(kLogger, "%s - could not read the RPDO configuration over SDO", req.joint_name.c_str());
     }
 
     std::lock_guard<std::mutex> lock(joints_mutex_);
     auto& joint = joints_[req.joint_name];
     joint.repair_pending = false;
-    if (joint.stalled)
-    {
-      req.driver->set_motor_motion_fault(req.channel, true, "not moving: " + detail);
-    }
+    joint.reported = true;
+    req.driver->set_motor_motion_status(req.channel, status, kRaiseDiagnosticError);
   }
 }
 

@@ -455,14 +455,16 @@ void Motor402::handleDiag()
 
   // Reported by the hardware interface's motion watchdog. Deliberately checked after the
   // state machine: the drive looks perfectly healthy in CiA402 terms while this is set.
+  // The key is always published; the summary level only changes for a confirmed fault,
+  // because consumers treat any non-OK motor status as "system not ok".
   {
-    std::lock_guard<std::mutex> lock(motion_fault_mutex_);
+    std::lock_guard<std::mutex> lock(motion_status_mutex_);
     this->diag_collector_->addf(joint_name_ + "_motion_watchdog", "%s",
-                                motion_fault_ ? motion_fault_detail_.c_str() : "ok");
-    if (motion_fault_)
+                                motion_status_.empty() ? "ok" : motion_status_.c_str());
+    if (motion_error_)
     {
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-                                     "Commanded but not moving: " + motion_fault_detail_);
+                                     "Commanded but not moving: " + motion_status_);
     }
   }
 }

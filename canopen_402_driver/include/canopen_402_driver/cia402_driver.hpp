@@ -54,10 +54,10 @@ public:
     return node_canopen_402_driver_->sdo_write(data);
   }
 
-  // Flags a motor as commanded-but-not-moving so it shows up in the device diagnostics.
-  void set_motor_motion_fault(uint8_t channel, bool active, const std::string& detail)
+  // Reports what the motion watchdog sees, so it shows up in the device diagnostics.
+  void set_motor_motion_status(uint8_t channel, const std::string& status, bool error)
   {
-    node_canopen_402_driver_->set_motor_motion_fault(channel, active, detail);
+    node_canopen_402_driver_->set_motor_motion_status(channel, status, error);
   }
 
   virtual bool sdo_read(ros2_canopen::COData& data)

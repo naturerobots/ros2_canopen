@@ -752,7 +752,7 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
                                !motion_controller_driver->has_motor_communication_failure(motor_channel);
 
       motion_watchdog_.update(motion_controller_driver, joint_name, it->first, motor_channel, watchdog_command,
-                              motor_data_[joint_name].actual_speed, drive_ready, time);
+                              motor_data_[joint_name].actual_position, drive_ready, time);
     }
   }
 

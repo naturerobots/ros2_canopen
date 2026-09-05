@@ -79,10 +79,10 @@ public:
     return motors_[channel]->isInitialized();
   }
 
-  // Flags a motor as commanded-but-not-moving so it shows up in the device diagnostics.
-  virtual void set_motor_motion_fault(uint8_t channel, bool active, const std::string& detail)
+  // Reports what the motion watchdog sees, so it shows up in the device diagnostics.
+  virtual void set_motor_motion_status(uint8_t channel, const std::string& status, bool error)
   {
-    motors_[channel]->setMotionFault(active, detail);
+    motors_[channel]->setMotionStatus(status, error);
   }
 
   virtual bool has_motor_communication_failure(uint8_t channel)

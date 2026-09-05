@@ -228,21 +228,24 @@ public:
   bool isHalted();
 
   /**
-   * @brief Flags the motor as commanded-but-not-moving
+   * @brief Reports what the hardware interface's motion watchdog sees for this motor
    *
-   * Set by the hardware interface's motion watchdog. The CiA402 state machine cannot see
-   * this condition on its own: a drive that discards its setpoints (for example because the
-   * RPDO carrying 0x60FF has its COB-ID invalid bit set) still reports "Operation enabled"
-   * and "drive follows command value", because the command it holds really is zero.
+   * The CiA402 state machine cannot see this condition on its own: a drive that discards
+   * its setpoints (for example because the RPDO carrying 0x60FF has its COB-ID invalid bit
+   * set) still reports "Operation enabled" and "drive follows command value", because the
+   * command it actually holds really is zero.
    *
-   * @param active true while the joint fails to move despite a command
-   * @param detail short human readable reason, surfaced in the diagnostics
+   * @param status short human readable state, always surfaced as a diagnostics key
+   * @param error whether to also raise the device summary to ERROR. Reserve this for a
+   *              confirmed, unrecoverable fault: consumers treat any non-OK motor status as
+   *              "system not ok" and will drop the robot out of manual mode, so a mere
+   *              suspicion must leave this false.
    */
-  void setMotionFault(bool active, const std::string& detail)
+  void setMotionStatus(const std::string& status, bool error)
   {
-    std::lock_guard<std::mutex> lock(motion_fault_mutex_);
-    motion_fault_ = active;
-    motion_fault_detail_ = detail;
+    std::lock_guard<std::mutex> lock(motion_status_mutex_);
+    motion_status_ = status;
+    motion_error_ = error;
   }
 
   /**
@@ -429,9 +432,9 @@ private:
   bool has_communication_failure_ = false;
 
   // Set by the hardware interface's motion watchdog, read by handleDiag()
-  bool motion_fault_ = false;
-  std::string motion_fault_detail_;
-  std::mutex motion_fault_mutex_;
+  std::string motion_status_;
+  bool motion_error_ = false;
+  std::mutex motion_status_mutex_;
 
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;

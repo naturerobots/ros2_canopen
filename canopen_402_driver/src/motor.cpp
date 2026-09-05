@@ -60,6 +60,15 @@ uint16_t Motor402::getMode()
 
 bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
 {
+  if (mode == 0 || mode > 32)
+  {
+    return false;
+  }
+  if (!driver)
+  {
+    return false;
+  }
+
   uint32_t supported_modes;
   try
   {
@@ -75,20 +84,21 @@ bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
     {
       supported_modes = driver->universal_get_value<uint32_t>(0x7502, 0x0);
     }
+    else
+    {
+      return false;
+    }
     // communication worked well
     has_communication_failure_ = false;
   }
-  catch (std::runtime_error& e)
+  catch (const std::runtime_error&)
   {
     // communication was unsuccessful
     has_communication_failure_ = true;
+    return false;
   }
 
-  bool supported = supported_modes & (1 << (mode - 1));
-
-  bool below_max = mode <= 32;
-  bool above_min = mode > 0;
-  return below_max && above_min && supported;
+  return (supported_modes & (uint32_t{1} << (mode - 1))) != 0;
 }
 void Motor402::registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel)
 {

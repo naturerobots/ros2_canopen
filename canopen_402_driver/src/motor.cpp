@@ -64,6 +64,10 @@ bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
   {
     return false;
   }
+  if (!driver)
+  {
+    return false;
+  }
 
   uint32_t supported_modes;
   try

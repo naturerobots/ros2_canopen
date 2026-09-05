@@ -21,11 +21,12 @@
 
 using namespace ros2_canopen;
 
-TEST(Motor402, rejects_invalid_operation_modes_without_accessing_driver)
+TEST(Motor402, rejects_mode_queries_without_driver)
 {
   Motor402 motor(std::shared_ptr<LelyDriverBridge>{}, State402::Operation_Enable, "test_joint", 1.0, 1.0, 1.0,
                  1.0, MotorBase::Profiled_Position, 1);
 
+  EXPECT_FALSE(motor.isModeSupported(MotorBase::Profiled_Position));
   EXPECT_FALSE(motor.isModeSupported(MotorBase::No_Mode));
   EXPECT_FALSE(motor.isModeSupported(33));
   EXPECT_FALSE(motor.isModeSupported(UINT16_MAX));

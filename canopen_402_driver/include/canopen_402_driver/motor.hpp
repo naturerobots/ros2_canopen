@@ -228,6 +228,24 @@ public:
   bool isHalted();
 
   /**
+   * @brief Flags the motor as commanded-but-not-moving
+   *
+   * Set by the hardware interface's motion watchdog. The CiA402 state machine cannot see
+   * this condition on its own: a drive that discards its setpoints (for example because the
+   * RPDO carrying 0x60FF has its COB-ID invalid bit set) still reports "Operation enabled"
+   * and "drive follows command value", because the command it holds really is zero.
+   *
+   * @param active true while the joint fails to move despite a command
+   * @param detail short human readable reason, surfaced in the diagnostics
+   */
+  void setMotionFault(bool active, const std::string& detail)
+  {
+    std::lock_guard<std::mutex> lock(motion_fault_mutex_);
+    motion_fault_ = active;
+    motion_fault_detail_ = detail;
+  }
+
+  /**
    * @brief Register a new operation mode for the drive
    *
    * This function will register an operation mode for the drive.
@@ -409,6 +427,11 @@ private:
   // whill switch to true when initialization procedure has finished
   bool initialized_ = false;
   bool has_communication_failure_ = false;
+
+  // Set by the hardware interface's motion watchdog, read by handleDiag()
+  bool motion_fault_ = false;
+  std::string motion_fault_detail_;
+  std::mutex motion_fault_mutex_;
 
   // Diagnostic components
   std::atomic<bool> enable_diagnostics_;

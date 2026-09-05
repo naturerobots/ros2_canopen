@@ -452,6 +452,19 @@ void Motor402::handleDiag()
   {
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Motor is not initialized");
   }
+
+  // Reported by the hardware interface's motion watchdog. Deliberately checked after the
+  // state machine: the drive looks perfectly healthy in CiA402 terms while this is set.
+  {
+    std::lock_guard<std::mutex> lock(motion_fault_mutex_);
+    this->diag_collector_->addf(joint_name_ + "_motion_watchdog", "%s",
+                                motion_fault_ ? motion_fault_detail_.c_str() : "ok");
+    if (motion_fault_)
+    {
+      this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                                     "Commanded but not moving: " + motion_fault_detail_);
+    }
+  }
 }
 
 bool Motor402::handleInit()

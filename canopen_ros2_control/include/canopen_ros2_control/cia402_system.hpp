@@ -30,7 +30,6 @@
 #include "canopen_ros2_control/canopen_system.hpp"
 #include <std_srvs/srv/trigger.hpp>
 #include "canopen_ros2_control/srv/adjust_position_offset.hpp"
-#include "canopen_ros2_control/rpdo_watchdog.hpp"
 #include <set>
 
 constexpr double kResponseOk = 1.0;
@@ -57,6 +56,7 @@ struct NodeRecoveryState
   int consecutive_init_failures = 0;
   std::chrono::steady_clock::time_point last_nmt_reset_time;
   int total_nmt_resets = 0;
+  bool pdo_check_needed = true;  // Set after NMT reset or boot, cleared after successful PDO check
 };
 
 using namespace ros2_canopen;
@@ -125,8 +125,9 @@ protected:
   static constexpr int kNmtResetCooldownSeconds = 5;     // seconds between resets
   static constexpr int kMaxNmtResetsPerSession = 5;      // prevent infinite loop
 
-  // Monitors RPDO configuration and repairs disabled RPDOs.
-  RpdoWatchdog rpdo_watchdog_;
+  // Verifies and repairs PDO configuration for a node. Called during init and after NMT reset.
+  // Returns number of PDOs that were repaired.
+  int repairPdoConfig(const std::shared_ptr<ros2_canopen::Cia402Driver>& driver, uint16_t node_id);
 
 private:
   void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);

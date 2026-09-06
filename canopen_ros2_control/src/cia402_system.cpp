@@ -90,13 +90,6 @@ hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interfac
   }
   RCLCPP_INFO(kLogger, "Cold start threshold: %.3f rad", cold_start_threshold_);
 
-  auto watchdog_it = info.hardware_parameters.find("rpdo_watchdog_enabled");
-  if (watchdog_it != info.hardware_parameters.end() && !watchdog_it->second.empty())
-  {
-    rpdo_watchdog_.setEnabled(watchdog_it->second == "true" || watchdog_it->second == "1");
-  }
-  RCLCPP_INFO(kLogger, "RPDO watchdog: %s", rpdo_watchdog_.isEnabled() ? "enabled" : "disabled");
-
   return CallbackReturn::SUCCESS;
 }
 
@@ -342,29 +335,41 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
   last_offset_save_time_ = rclcpp::Clock().now();
 
-  // Register all drivers with the RPDO watchdog
+  // Verify and repair PDO configuration for all nodes after init
+  constexpr int kMaxPdoRepairRetries = 3;
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
     auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    std::vector<uint8_t> channels;
-    std::vector<std::string> joint_names;
-    for (auto channel : driver->get_available_motor_channels())
+    int result = 0;
+    for (int attempt = 1; attempt <= kMaxPdoRepairRetries; ++attempt)
     {
-      channels.push_back(channel);
-      joint_names.push_back(driver->get_motor_joint_name(channel));
+      result = repairPdoConfig(driver, it->first);
+      if (result >= 0)
+      {
+        if (result > 0)
+        {
+          RCLCPP_INFO(kLogger, "Node %d: repaired %d PDO(s) during activation", it->first, result);
+        }
+        node_recovery_state_[it->first].pdo_check_needed = false;  // Don't re-check in write loop
+        break;
+      }
+      RCLCPP_WARN(kLogger, "Node %d: PDO repair failed (%d), retry %d/%d",
+                  it->first, -result, attempt, kMaxPdoRepairRetries);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    rpdo_watchdog_.registerDriver(driver, it->first, channels, joint_names);
+    if (result < 0)
+    {
+      RCLCPP_ERROR(kLogger, "Node %d: PDO repair failed after %d attempts, will retry in write loop",
+                   it->first, kMaxPdoRepairRetries);
+      // Leave pdo_check_needed = true (default) so write loop retries
+    }
   }
-  rpdo_watchdog_.start();
 
   return CanopenSystem::on_activate(previous_state);
 }
 
 hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
-  // Stop the watchdog worker before the drivers go away underneath it.
-  rpdo_watchdog_.stop();
-
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -601,9 +606,28 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         recovery.last_nmt_reset_time = now;
         recovery.total_nmt_resets++;
         recovery.consecutive_init_failures = 0;
+        recovery.pdo_check_needed = true;  // Re-check PDO config after node reboot
 
         // Skip init attempt this cycle - let node reset complete, try init next cycle
         continue;
+      }
+
+      // Verify PDO configuration only after NMT reset or boot (not every init attempt)
+      if (recovery.pdo_check_needed)
+      {
+        int pdo_result = repairPdoConfig(motion_controller_driver, node_id);
+        if (pdo_result < 0)
+        {
+          // PDO repair failed, skip motor init this cycle and retry next cycle
+          RCLCPP_WARN(kLogger, "Node %d: PDO repair failed (%d), will retry", node_id, -pdo_result);
+          recovery.consecutive_init_failures++;
+          continue;
+        }
+        if (pdo_result > 0)
+        {
+          RCLCPP_INFO(kLogger, "Node %d: repaired %d PDO(s) before motor init", node_id, pdo_result);
+        }
+        recovery.pdo_check_needed = false;
       }
 
       // Attempt normal motor init for this node
@@ -703,6 +727,7 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     if (canopen_data_[it->first].nmt_state.reset_command())
     {
       motion_controller_driver->reset_node_nmt_command();
+      node_recovery_state_[it->first].pdo_check_needed = true;  // Re-check PDO after reset
     }
 
     // start nmt
@@ -863,6 +888,106 @@ void Cia402System::initializePositionOffsets()
       }
     }
   }
+}
+
+int Cia402System::repairPdoConfig(const std::shared_ptr<ros2_canopen::Cia402Driver>& driver, uint16_t node_id)
+{
+  int repaired = 0;
+  int failed = 0;
+
+  // Standard CiA301 COB-ID bases for "auto" configuration
+  // RPDO: 0x200, 0x300, 0x400, 0x500 + node_id
+  // TPDO: 0x180, 0x280, 0x380, 0x480 + node_id
+  static constexpr uint16_t kRpdoBases[4] = { 0x200, 0x300, 0x400, 0x500 };
+  static constexpr uint16_t kTpdoBases[4] = { 0x180, 0x280, 0x380, 0x480 };
+  static constexpr uint8_t kNumPdos = 4;
+
+  // Check and repair RPDO COB-IDs (0x1400-0x1403, sub-index 1)
+  for (uint8_t n = 0; n < kNumPdos; ++n)
+  {
+    const uint16_t index = static_cast<uint16_t>(0x1400 + n);
+    const uint32_t expected_cobid = kRpdoBases[n] + node_id;
+
+    ros2_canopen::COData data;
+    data.index_ = index;
+    data.subindex_ = 1;
+    data.data_ = 0;
+
+    if (!driver->sdo_read(data))
+    {
+      continue;  // RPDO not implemented or SDO failed
+    }
+
+    const uint32_t current_cobid = data.data_;
+    // Check if disabled (bit 31 set) or COB-ID mismatch
+    if ((current_cobid & 0x80000000u) != 0 || (current_cobid & 0x7FFu) != expected_cobid)
+    {
+      ros2_canopen::COData fix;
+      fix.index_ = index;
+      fix.subindex_ = 1;
+      fix.data_ = expected_cobid;  // Write expected COB-ID with bit 31 clear
+
+      if (driver->sdo_write(fix))
+      {
+        repaired++;
+        RCLCPP_WARN(kLogger, "Node %u RPDO%u: fixed COB-ID 0x%08X -> 0x%08X",
+                    node_id, static_cast<unsigned>(n + 1), current_cobid, expected_cobid);
+      }
+      else
+      {
+        failed++;
+        RCLCPP_ERROR(kLogger, "Node %u RPDO%u: failed to fix COB-ID 0x%08X",
+                     node_id, static_cast<unsigned>(n + 1), current_cobid);
+      }
+    }
+  }
+
+  // Check and repair TPDO COB-IDs (0x1800-0x1803, sub-index 1)
+  for (uint8_t n = 0; n < kNumPdos; ++n)
+  {
+    const uint16_t index = static_cast<uint16_t>(0x1800 + n);
+    const uint32_t expected_cobid = kTpdoBases[n] + node_id;
+
+    ros2_canopen::COData data;
+    data.index_ = index;
+    data.subindex_ = 1;
+    data.data_ = 0;
+
+    if (!driver->sdo_read(data))
+    {
+      continue;  // TPDO not implemented or SDO failed
+    }
+
+    const uint32_t current_cobid = data.data_;
+    // Check if disabled (bit 31 set) or COB-ID mismatch
+    if ((current_cobid & 0x80000000u) != 0 || (current_cobid & 0x7FFu) != expected_cobid)
+    {
+      ros2_canopen::COData fix;
+      fix.index_ = index;
+      fix.subindex_ = 1;
+      fix.data_ = expected_cobid;  // Write expected COB-ID with bit 31 clear
+
+      if (driver->sdo_write(fix))
+      {
+        repaired++;
+        RCLCPP_WARN(kLogger, "Node %u TPDO%u: fixed COB-ID 0x%08X -> 0x%08X",
+                    node_id, static_cast<unsigned>(n + 1), current_cobid, expected_cobid);
+      }
+      else
+      {
+        failed++;
+        RCLCPP_ERROR(kLogger, "Node %u TPDO%u: failed to fix COB-ID 0x%08X",
+                     node_id, static_cast<unsigned>(n + 1), current_cobid);
+      }
+    }
+  }
+
+  // Return negative if any repair failed (caller should retry)
+  if (failed > 0)
+  {
+    return -failed;
+  }
+  return repaired;
 }
 
 }  // namespace canopen_ros2_control

@@ -36,7 +36,6 @@ add_library(
   SHARED
   src/canopen_system.cpp
   src/cia402_system.cpp
-  src/rpdo_watchdog.cpp
   src/robot_system.cpp
 )
 

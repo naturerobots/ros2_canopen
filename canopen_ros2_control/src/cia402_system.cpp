@@ -685,6 +685,8 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     // stop all motors
     stop_all_motors();
 
+    auto now = std::chrono::steady_clock::now();
+
     // recover motor from fault
     for (auto it = drivers.begin(); it != drivers.end(); ++it)
     {
@@ -703,19 +705,49 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
             RCLCPP_WARN_STREAM(kLogger, "CW fault reset timed out for "
                                             << motion_controller_driver->get_motor_joint_name(motor_channel)
                                             << ", escalating to NMT reset.");
-            // motion_controller_driver->reset_node_nmt_command();
-            // // The NMT command is fire-and-forget. Give the drive time to reset and reach
-            // // Switch_On_Disabled before we attempt to bring it back to Operation_Enable.
-            // std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            // motion_controller_driver->init_motor(motor_channel);
-            // motion_controller_driver->set_default_operation_mode(motor_channel);
           }
+          // Mark node as recovering - needs cooldown before init attempt
+          node_recovery_state_[it->first].recovering_from_fault = true;
+          node_recovery_state_[it->first].last_fault_recovery_time = now;
         }
       }
     }
 
-    // dont to anything else
+    // dont do anything else
     return hardware_interface::return_type::OK;
+  }
+
+  // Check if any node is still in post-fault-recovery cooldown
+  {
+    auto now = std::chrono::steady_clock::now();
+    bool any_recovering = false;
+
+    for (auto& [node_id, recovery] : node_recovery_state_)
+    {
+      if (recovery.recovering_from_fault)
+      {
+        auto ms_since_recovery = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - recovery.last_fault_recovery_time).count();
+
+        if (ms_since_recovery < kFaultRecoveryCooldownMs)
+        {
+          any_recovering = true;
+        }
+        else
+        {
+          // Cooldown complete, allow init
+          recovery.recovering_from_fault = false;
+          RCLCPP_INFO(kLogger, "Node %d: fault recovery cooldown complete", node_id);
+        }
+      }
+    }
+
+    if (any_recovering)
+    {
+      // Still recovering, stop motors and wait
+      stop_all_motors();
+      return hardware_interface::return_type::OK;
+    }
   }
 
   for (auto it = drivers.begin(); it != drivers.end(); ++it)

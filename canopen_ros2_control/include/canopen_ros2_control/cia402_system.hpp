@@ -123,7 +123,7 @@ protected:
   // NMT reset recovery tracking per node
   std::map<uint8_t, NodeRecoveryState> node_recovery_state_;
   // ponytail: hardcoded thresholds, make configurable if needed
-  static constexpr int kNmtResetFailureThreshold = 10;   // failures before NMT reset
+  static constexpr int kNmtResetFailureThreshold = 4;    // failures before NMT reset
   static constexpr int kNmtResetCooldownSeconds = 5;     // seconds between resets
   static constexpr int kMaxNmtResetsPerSession = 5;      // prevent infinite loop
   static constexpr int kFaultRecoveryCooldownMs = 500;   // ms to wait after fault recovery before init

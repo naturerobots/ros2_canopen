@@ -90,12 +90,12 @@ hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interfac
   }
   RCLCPP_INFO(kLogger, "Cold start threshold: %.3f rad", cold_start_threshold_);
 
-  auto watchdog_it = info.hardware_parameters.find("motion_watchdog_enabled");
+  auto watchdog_it = info.hardware_parameters.find("rpdo_watchdog_enabled");
   if (watchdog_it != info.hardware_parameters.end() && !watchdog_it->second.empty())
   {
-    motion_watchdog_.setEnabled(watchdog_it->second == "true" || watchdog_it->second == "1");
+    rpdo_watchdog_.setEnabled(watchdog_it->second == "true" || watchdog_it->second == "1");
   }
-  RCLCPP_INFO(kLogger, "Motion watchdog: %s", motion_watchdog_.isEnabled() ? "enabled" : "disabled");
+  RCLCPP_INFO(kLogger, "RPDO watchdog: %s", rpdo_watchdog_.isEnabled() ? "enabled" : "disabled");
 
   return CallbackReturn::SUCCESS;
 }
@@ -342,7 +342,20 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
   last_offset_save_time_ = rclcpp::Clock().now();
 
-  motion_watchdog_.start();
+  // Register all drivers with the RPDO watchdog
+  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  {
+    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    std::vector<uint8_t> channels;
+    std::vector<std::string> joint_names;
+    for (auto channel : driver->get_available_motor_channels())
+    {
+      channels.push_back(channel);
+      joint_names.push_back(driver->get_motor_joint_name(channel));
+    }
+    rpdo_watchdog_.registerDriver(driver, it->first, channels, joint_names);
+  }
+  rpdo_watchdog_.start();
 
   return CanopenSystem::on_activate(previous_state);
 }
@@ -350,7 +363,7 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
   // Stop the watchdog worker before the drivers go away underneath it.
-  motion_watchdog_.stop();
+  rpdo_watchdog_.stop();
 
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
@@ -710,10 +723,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
       std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
       const uint16_t& mode = motion_controller_driver->get_mode(motor_channel);
 
-      // Velocity setpoint the watchdog compares against. Only velocity modes are watched:
-      // in position or torque mode a standing command that produces no motion is normal.
-      double watchdog_command = 0.0;
-
       switch (mode)
       {
         case MotorBase::No_Mode:
@@ -735,7 +744,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
           motion_controller_driver->set_target(
               motor_channel,
               motor_data_[joint_name].target_velocity);
-          watchdog_command = motor_data_[joint_name].target_velocity;
           break;
         case MotorBase::Profiled_Torque:
         case MotorBase::Cyclic_Synchronous_Torque:
@@ -745,14 +753,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         default:
           RCLCPP_INFO(kLogger, "Mode %u not supported", mode);
       }
-
-      // Only meaningful while the drive claims it is able to act on the setpoint.
-      const bool drive_ready = motion_controller_driver->is_motor_initialized(motor_channel) &&
-                               !motion_controller_driver->is_motor_faulty(motor_channel) &&
-                               !motion_controller_driver->has_motor_communication_failure(motor_channel);
-
-      motion_watchdog_.update(motion_controller_driver, joint_name, it->first, motor_channel, watchdog_command,
-                              motor_data_[joint_name].actual_position, drive_ready, time);
     }
   }
 

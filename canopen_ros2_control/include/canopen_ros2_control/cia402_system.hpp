@@ -30,7 +30,7 @@
 #include "canopen_ros2_control/canopen_system.hpp"
 #include <std_srvs/srv/trigger.hpp>
 #include "canopen_ros2_control/srv/adjust_position_offset.hpp"
-#include "canopen_ros2_control/motion_watchdog.hpp"
+#include "canopen_ros2_control/rpdo_watchdog.hpp"
 #include <set>
 
 constexpr double kResponseOk = 1.0;
@@ -125,8 +125,8 @@ protected:
   static constexpr int kNmtResetCooldownSeconds = 5;     // seconds between resets
   static constexpr int kMaxNmtResetsPerSession = 5;      // prevent infinite loop
 
-  // Detects joints that are commanded but do not move, and repairs the cause.
-  MotionWatchdog motion_watchdog_;
+  // Monitors RPDO configuration and repairs disabled RPDOs.
+  RpdoWatchdog rpdo_watchdog_;
 
 private:
   void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);

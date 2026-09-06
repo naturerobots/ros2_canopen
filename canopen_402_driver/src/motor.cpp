@@ -453,18 +453,18 @@ void Motor402::handleDiag()
     this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Motor is not initialized");
   }
 
-  // Reported by the hardware interface's motion watchdog. Deliberately checked after the
+  // Reported by the hardware interface's RPDO watchdog. Deliberately checked after the
   // state machine: the drive looks perfectly healthy in CiA402 terms while this is set.
   // The key is always published; the summary level only changes for a confirmed fault,
   // because consumers treat any non-OK motor status as "system not ok".
   {
     std::lock_guard<std::mutex> lock(motion_status_mutex_);
-    this->diag_collector_->addf(joint_name_ + "_motion_watchdog", "%s",
+    this->diag_collector_->addf(joint_name_ + "_rpdo_watchdog", "%s",
                                 motion_status_.empty() ? "ok" : motion_status_.c_str());
     if (motion_error_)
     {
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
-                                     "Commanded but not moving: " + motion_status_);
+                                     "RPDO config fault: " + motion_status_);
     }
   }
 }

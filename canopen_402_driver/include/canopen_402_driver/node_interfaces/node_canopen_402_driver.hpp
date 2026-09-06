@@ -79,7 +79,7 @@ public:
     return motors_[channel]->isInitialized();
   }
 
-  // Reports what the motion watchdog sees, so it shows up in the device diagnostics.
+  // Reports what the RPDO watchdog sees, so it shows up in the device diagnostics.
   virtual void set_motor_motion_status(uint8_t channel, const std::string& status, bool error)
   {
     motors_[channel]->setMotionStatus(status, error);

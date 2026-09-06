@@ -54,7 +54,7 @@ public:
     return node_canopen_402_driver_->sdo_write(data);
   }
 
-  // Reports what the motion watchdog sees, so it shows up in the device diagnostics.
+  // Reports what the RPDO watchdog sees, so it shows up in the device diagnostics.
   void set_motor_motion_status(uint8_t channel, const std::string& status, bool error)
   {
     node_canopen_402_driver_->set_motor_motion_status(channel, status, error);

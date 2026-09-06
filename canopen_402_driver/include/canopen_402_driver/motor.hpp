@@ -228,7 +228,7 @@ public:
   bool isHalted();
 
   /**
-   * @brief Reports what the hardware interface's motion watchdog sees for this motor
+   * @brief Reports what the hardware interface's RPDO watchdog sees for this motor
    *
    * The CiA402 state machine cannot see this condition on its own: a drive that discards
    * its setpoints (for example because the RPDO carrying 0x60FF has its COB-ID invalid bit
@@ -431,7 +431,7 @@ private:
   bool initialized_ = false;
   bool has_communication_failure_ = false;
 
-  // Set by the hardware interface's motion watchdog, read by handleDiag()
+  // Set by the hardware interface's RPDO watchdog, read by handleDiag()
   std::string motion_status_;
   bool motion_error_ = false;
   std::mutex motion_status_mutex_;

@@ -57,8 +57,6 @@ struct NodeRecoveryState
   std::chrono::steady_clock::time_point last_nmt_reset_time;
   int total_nmt_resets = 0;
   bool pdo_check_needed = true;  // Set after NMT reset or boot, cleared after successful PDO check
-  std::chrono::steady_clock::time_point last_fault_recovery_time;
-  bool recovering_from_fault = false;  // Set after fault recovery, cleared after cooldown
 };
 
 using namespace ros2_canopen;
@@ -123,10 +121,9 @@ protected:
   // NMT reset recovery tracking per node
   std::map<uint8_t, NodeRecoveryState> node_recovery_state_;
   // ponytail: hardcoded thresholds, make configurable if needed
-  static constexpr int kNmtResetFailureThreshold = 4;    // failures before NMT reset
+  static constexpr int kNmtResetFailureThreshold = 10;   // failures before NMT reset
   static constexpr int kNmtResetCooldownSeconds = 5;     // seconds between resets
   static constexpr int kMaxNmtResetsPerSession = 5;      // prevent infinite loop
-  static constexpr int kFaultRecoveryCooldownMs = 500;   // ms to wait after fault recovery before init
 
   // Verifies and repairs PDO configuration for a node. Called during init and after NMT reset.
   // Returns number of PDOs that were repaired.

@@ -220,12 +220,7 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 {
   auto drivers = device_container_->get_registered_drivers();
 
-  // Motor init with retry on failure
-  // NMT reset already done during driver boot (Boot() in add_to_master)
-  // Write loop handles persistent failures with NMT reset escalation
-  constexpr int max_init_retries = 3;
-  constexpr int retry_delay_ms = 200;  // only on failure
-
+  // Motor init - single attempt, write loop handles failures with NMT reset escalation
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
     auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
@@ -233,45 +228,25 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
       std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
-      bool init_success = false;
 
-      for (int attempt = 1; attempt <= max_init_retries && !init_success; ++attempt)
+      RCLCPP_INFO(kLogger, "Init motor %d channel %d joint: %s",
+                  it->first, (int)motor_channel, joint_name.c_str());
+
+      if (motion_controller_driver->init_motor(motor_channel))
       {
-        RCLCPP_INFO(kLogger, "Init motor %d channel %d joint: %s (attempt %d/%d)",
-                    it->first, (int)motor_channel, joint_name.c_str(), attempt, max_init_retries);
+        RCLCPP_INFO(kLogger, "Set operation mode for motor %d channel %d joint: %s",
+                    it->first, (int)motor_channel, joint_name.c_str());
 
-        if (motion_controller_driver->init_motor(motor_channel))
+        if (!motion_controller_driver->set_default_operation_mode(motor_channel))
         {
-          RCLCPP_INFO(kLogger, "Set operation mode for motor %d channel %d joint: %s",
-                      it->first, (int)motor_channel, joint_name.c_str());
-
-          if (motion_controller_driver->set_default_operation_mode(motor_channel))
-          {
-            init_success = true;
-          }
-          else
-          {
-            RCLCPP_WARN(kLogger, "Failed to set operation mode for %s (attempt %d/%d)",
-                        joint_name.c_str(), attempt, max_init_retries);
-          }
-        }
-        else
-        {
-          RCLCPP_WARN(kLogger, "Failed to init motor %s (attempt %d/%d)",
-                      joint_name.c_str(), attempt, max_init_retries);
-        }
-
-        if (!init_success && attempt < max_init_retries)
-        {
-          RCLCPP_INFO(kLogger, "Retrying motor init for %s in %d ms...", joint_name.c_str(), retry_delay_ms);
-          std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+          RCLCPP_WARN(kLogger, "Failed to set operation mode for %s - will retry in write loop",
+                      joint_name.c_str());
         }
       }
-
-      if (!init_success)
+      else
       {
-        RCLCPP_ERROR(kLogger, "Motor %s failed to initialize after %d attempts - will retry in write loop",
-                     joint_name.c_str(), max_init_retries);
+        RCLCPP_WARN(kLogger, "Failed to init motor %s - will retry in write loop",
+                    joint_name.c_str());
       }
 
       // Initialize offset to 0 for all joints
@@ -536,6 +511,35 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     return hardware_interface::return_type::OK;
   }
 
+  // at least one motor is faulty
+  if (is_motor_faulty())
+  {
+    // stop all motors
+    stop_all_motors();
+
+    // recover motor from fault
+    for (auto it = drivers.begin(); it != drivers.end(); ++it)
+    {
+      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
+      {
+        if (motion_controller_driver->is_motor_faulty(motor_channel))
+        {
+          RCLCPP_INFO_STREAM(kLogger, "Recover motor from fault: "
+                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
+                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
+          if (!motion_controller_driver->recover_motor(motor_channel))
+          {
+            RCLCPP_WARN_STREAM(kLogger, "Fault reset timed out for "
+                                            << motion_controller_driver->get_motor_joint_name(motor_channel));
+          }
+        }
+      }
+    }
+
+    return hardware_interface::return_type::OK;
+  }
+
   // at least one motor is uninitialized
   if (is_motor_uninitialized())
   {
@@ -573,7 +577,7 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
       auto& recovery = node_recovery_state_[node_id];
 
       // Post-reset cooldown: wait before attempting init after NMT reset
-      constexpr int post_reset_cooldown_ms = 1000;
+      constexpr int post_reset_cooldown_ms = 2000;
       auto ms_since_reset = std::chrono::duration_cast<std::chrono::milliseconds>(
           now - recovery.last_nmt_reset_time).count();
       if (recovery.total_nmt_resets > 0 && ms_since_reset < post_reset_cooldown_ms)
@@ -677,77 +681,6 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
 
     // dont do anything else
     return hardware_interface::return_type::OK;
-  }
-
-  // at least one motor is faulty
-  if (is_motor_faulty())
-  {
-    // stop all motors
-    stop_all_motors();
-
-    auto now = std::chrono::steady_clock::now();
-
-    // recover motor from fault
-    for (auto it = drivers.begin(); it != drivers.end(); ++it)
-    {
-      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        if (motion_controller_driver->is_motor_faulty(motor_channel))
-        {
-          RCLCPP_INFO_STREAM(kLogger, "Recover motor from fault: "
-                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
-          if (!motion_controller_driver->recover_motor(motor_channel))
-          {
-            // CW fault reset was rejected by the drive (latching fault). Escalate to NMT Reset Node,
-            // which is equivalent to what a full ROS driver restart does for this node.
-            RCLCPP_WARN_STREAM(kLogger, "CW fault reset timed out for "
-                                            << motion_controller_driver->get_motor_joint_name(motor_channel)
-                                            << ", escalating to NMT reset.");
-          }
-          // Mark node as recovering - needs cooldown before init attempt
-          node_recovery_state_[it->first].recovering_from_fault = true;
-          node_recovery_state_[it->first].last_fault_recovery_time = now;
-        }
-      }
-    }
-
-    // dont do anything else
-    return hardware_interface::return_type::OK;
-  }
-
-  // Check if any node is still in post-fault-recovery cooldown
-  {
-    auto now = std::chrono::steady_clock::now();
-    bool any_recovering = false;
-
-    for (auto& [node_id, recovery] : node_recovery_state_)
-    {
-      if (recovery.recovering_from_fault)
-      {
-        auto ms_since_recovery = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - recovery.last_fault_recovery_time).count();
-
-        if (ms_since_recovery < kFaultRecoveryCooldownMs)
-        {
-          any_recovering = true;
-        }
-        else
-        {
-          // Cooldown complete, allow init
-          recovery.recovering_from_fault = false;
-          RCLCPP_INFO(kLogger, "Node %d: fault recovery cooldown complete", node_id);
-        }
-      }
-    }
-
-    if (any_recovering)
-    {
-      // Still recovering, stop motors and wait
-      stop_all_motors();
-      return hardware_interface::return_type::OK;
-    }
   }
 
   for (auto it = drivers.begin(); it != drivers.end(); ++it)

@@ -204,8 +204,6 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
 {
   NodeCanopenProxyDriver<NODETYPE>::configure(false);
 
-  RCLCPP_ERROR_STREAM(this->node_->get_logger(), "CONFIGURE");
-
   // get channels part of configuration. this contains key value pairs as:
   // <channel_id>:
   //   <key>: <value>

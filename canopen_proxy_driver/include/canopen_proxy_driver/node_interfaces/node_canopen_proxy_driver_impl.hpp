@@ -59,7 +59,7 @@ void NodeCanopenProxyDriver<rclcpp::Node>::configure(bool called_from_base)
   }
   catch (const std::exception& e)
   {
-    RCLCPP_ERROR(this->node_->get_logger(), "Failed to parse enable_ros_interfaces: %s, defaulting to true", e.what());
+    RCLCPP_WARN(this->node_->get_logger(), "Failed to parse enable_ros_interfaces: %s, defaulting to true.", e.what());
     enable_ros_interfaces_ = true;
   }
 

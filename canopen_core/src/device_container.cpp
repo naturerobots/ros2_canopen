@@ -314,7 +314,7 @@ bool DeviceContainer::load_drivers()
       add_node_to_executor(registered_drivers_[node_id.value()]->get_node_base_interface());
 
       // Retry driver init on failure
-      constexpr int max_init_retries = 3;
+      constexpr int max_init_retries = 15;
       constexpr int retry_delay_ms = 200;  // only on failure
       bool init_success = false;
 

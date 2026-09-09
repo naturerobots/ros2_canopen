@@ -15,6 +15,7 @@
 
 #include "canopen_core/device_container.hpp"
 #include "canopen_core/device_container_error.hpp"
+#include <lely/coapp/master.hpp>
 #include <thread>
 #include <chrono>
 
@@ -313,34 +314,65 @@ bool DeviceContainer::load_drivers()
       }
       add_node_to_executor(registered_drivers_[node_id.value()]->get_node_base_interface());
 
-      // Retry driver init on failure
-      constexpr int max_init_retries = 15;
-      constexpr int retry_delay_ms = 200;  // only on failure
+      // Retry driver init: 5 blocks of 2 attempts each, NMT reset between blocks
+      constexpr int max_blocks = 5;
+      constexpr int attempts_per_block = 2;
+      constexpr int retry_delay_ms = 1000;
+      constexpr int post_reset_delay_ms = 2000;  // longer wait after NMT reset
       bool init_success = false;
+      int total_attempts = 0;
 
-      for (int attempt = 1; attempt <= max_init_retries; ++attempt)
+      for (int block = 1; block <= max_blocks && !init_success; ++block)
       {
-        try
+        for (int attempt = 1; attempt <= attempts_per_block && !init_success; ++attempt)
         {
-          registered_drivers_[node_id.value()]->init();
-          init_success = true;
-          break;
-        }
-        catch (const std::exception & e)
-        {
-          RCLCPP_WARN(
-            this->get_logger(),
-            "Driver init failed for %s (attempt %d/%d): %s",
-            it->c_str(), attempt, max_init_retries, e.what());
-
-          if (attempt < max_init_retries)
+          ++total_attempts;
+          try
           {
-            RCLCPP_INFO(
-              this->get_logger(),
-              "Retrying driver init for %s in %d ms...",
-              it->c_str(), retry_delay_ms);
-            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+            registered_drivers_[node_id.value()]->init();
+            init_success = true;
           }
+          catch (const std::exception & e)
+          {
+            RCLCPP_WARN(
+              this->get_logger(),
+              "Driver init failed for %s (block %d/%d, attempt %d/%d): %s",
+              it->c_str(), block, max_blocks, attempt, attempts_per_block, e.what());
+
+            if (attempt < attempts_per_block)
+            {
+              RCLCPP_INFO(
+                this->get_logger(),
+                "Retrying driver init for %s in %d ms...",
+                it->c_str(), retry_delay_ms);
+              std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+            }
+          }
+        }
+
+        // NMT reset between blocks (not after last block)
+        if (!init_success && block < max_blocks)
+        {
+          RCLCPP_INFO(
+            this->get_logger(),
+            "Sending NMT reset to node %d after block %d failed...",
+            node_id.value(), block);
+          try
+          {
+            can_master_->get_master()->Command(
+                lely::canopen::NmtCommand::RESET_NODE, node_id.value());
+          }
+          catch (const std::exception & nmt_e)
+          {
+            RCLCPP_WARN(
+              this->get_logger(),
+              "NMT reset failed for node %d: %s", node_id.value(), nmt_e.what());
+          }
+          RCLCPP_INFO(
+            this->get_logger(),
+            "Waiting %d ms after NMT reset for node %d...",
+            post_reset_delay_ms, node_id.value());
+          std::this_thread::sleep_for(std::chrono::milliseconds(post_reset_delay_ms));
         }
       }
 
@@ -348,8 +380,8 @@ bool DeviceContainer::load_drivers()
       {
         RCLCPP_ERROR(
           this->get_logger(),
-          "Driver init failed for %s after %d attempts",
-          it->c_str(), max_init_retries);
+          "Driver init failed for %s after %d attempts (%d blocks)",
+          it->c_str(), total_attempts, max_blocks);
         return false;
       }
     }

@@ -196,6 +196,12 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
   std::future<std::shared_ptr<ros2_canopen::LelyDriverBridge>> f = prom->get_future();
   this->exec_->post([this, prom]() {
     std::scoped_lock<std::mutex> lock(this->driver_mutex_);
+    // Skip if previous attempt already created a valid driver
+    if (this->lely_driver_ && this->lely_driver_->IsReady())
+    {
+      prom->set_value(lely_driver_);
+      return;
+    }
     this->lely_driver_ = std::make_shared<ros2_canopen::LelyDriverBridge>(
         *(this->exec_), *(this->master_), this->node_id_, this->node_->get_name(), this->eds_, this->bin_);
     this->driver_ = std::static_pointer_cast<lely::canopen::BasicDriver>(this->lely_driver_);

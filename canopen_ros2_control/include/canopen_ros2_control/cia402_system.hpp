@@ -31,7 +31,10 @@
 #include "canopen_ros2_control/motor_manager.hpp"
 #include <std_srvs/srv/trigger.hpp>
 #include "canopen_ros2_control/srv/adjust_position_offset.hpp"
+#include "canopen_ros2_control/srv/home_joint.hpp"
+#include <atomic>
 #include <set>
+#include <thread>
 
 constexpr double kResponseOk = 1.0;
 constexpr double kResponseFail = 0.0;
@@ -96,6 +99,13 @@ protected:
   rclcpp::Time last_offset_save_time_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_position_home_service_;
   rclcpp::Service<canopen_ros2_control::srv::AdjustPositionOffset>::SharedPtr adjust_position_offset_service_;
+  rclcpp::Service<canopen_ros2_control::srv::HomeJoint>::SharedPtr home_joint_service_;
+
+  // Homing runs on its own thread: it blocks on drive status updates that are only delivered by
+  // this node's own poll timer, which is serviced by the same executor as the service callback.
+  // Blocking inside the callback itself would starve that timer and homing would never complete.
+  std::thread homing_thread_;
+  std::atomic<bool> homing_in_progress_{ false };
   std::shared_ptr<rclcpp::Node> service_node_;
 
   void initializePositionOffsets();

@@ -16,6 +16,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cmath>
 #include "canopen_402_driver/motor.hpp"
 #include "canopen_402_driver/homing_mode.hpp"
 using namespace ros2_canopen;
@@ -659,6 +660,11 @@ bool Motor402::handleHalt()
 bool Motor402::handleRecover()
 {
   if (is_homing_) return false;  // don't interfere with homing
+  return recoverInternal();
+}
+
+bool Motor402::recoverInternal()
+{
   start_fault_reset_ = true;
   {
     std::scoped_lock lock(mode_mutex_);
@@ -690,20 +696,24 @@ bool Motor402::handleHoming()
   // Determine CANopen indices based on channel
   uint16_t homing_method_index;
   uint16_t home_offset_index;
+  uint16_t homing_speed_index;
   if (channel_ == 1)
   {
     homing_method_index = 0x6098;
     home_offset_index = 0x607C;
+    homing_speed_index = 0x6099;
   }
   else if (channel_ == 2)
   {
     homing_method_index = 0x6898;
     home_offset_index = 0x687C;
+    homing_speed_index = 0x6899;
   }
   else if (channel_ == 3)
   {
     homing_method_index = 0x7098;
     home_offset_index = 0x707C;
+    homing_speed_index = 0x7099;
   }
   else
   {
@@ -711,9 +721,12 @@ bool Motor402::handleHoming()
     return false;
   }
 
-  // Recover to operation enable state (halt is done by coordinator for all motors)
+  // Recover to operation enable state (halt is done by coordinator for all motors).
+  // Uses recoverInternal() directly: handleRecover() refuses to run once is_homing_ is set
+  // (set above, to keep other callers like MotorManager out), which would otherwise make
+  // this bootstrap step fail every time.
   RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Enabling motor %s", joint_name_.c_str());
-  if (!handleRecover())
+  if (!recoverInternal())
   {
     RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enable motor for homing");
     return false;
@@ -730,6 +743,24 @@ bool Motor402::handleHoming()
   {
     RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Failed to set homing method: %s", e.what());
     return false;
+  }
+
+  // Write homing speed (search-for-switch and search-for-zero), if configured
+  if (homing_speed_ > 0.0)
+  {
+    uint32_t speed_dev = static_cast<uint32_t>(std::fabs(homing_speed_ * scale_vel_to_dev_));
+    RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Setting homing speed %.4f rad/s (%u dev) for %s",
+                homing_speed_, speed_dev, joint_name_.c_str());
+    try
+    {
+      driver->universal_set_value<uint32_t>(homing_speed_index, 0x1, speed_dev);
+      driver->universal_set_value<uint32_t>(homing_speed_index, 0x2, speed_dev);
+    }
+    catch (std::exception& e)
+    {
+      RCLCPP_WARN(rclcpp::get_logger("canopen_402_driver"), "Failed to set homing speed: %s", e.what());
+      // Continue anyway - drive will use its previously configured/default homing speed
+    }
   }
 
   // Switch to homing mode

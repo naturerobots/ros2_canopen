@@ -49,6 +49,10 @@ Cia402System::~Cia402System()
 {
   // Before ~CanopenSystem() destroys the device container the manager thread uses.
   motor_manager_.stop();
+  if (homing_thread_.joinable())
+  {
+    homing_thread_.join();
+  }
 }
 
 hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interface::HardwareInfo& info)
@@ -285,6 +289,76 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
       response->message = "Offset adjusted successfully";
     });
 
+  home_joint_service_ = service_node_->create_service<canopen_ros2_control::srv::HomeJoint>(
+    "~/home_joint",
+    [this](const std::shared_ptr<canopen_ros2_control::srv::HomeJoint::Request> request,
+           std::shared_ptr<canopen_ros2_control::srv::HomeJoint::Response> response) {
+      const std::string& joint = request->joint_name;
+
+      if (homing_in_progress_.exchange(true))
+      {
+        response->success = false;
+        response->message = "Another homing operation is already in progress";
+        RCLCPP_WARN(kLogger, "Homing rejected for %s: %s", joint.c_str(), response->message.c_str());
+        return;
+      }
+
+      std::shared_ptr<ros2_canopen::Cia402Driver> found_driver;
+      uint8_t found_channel = 0;
+      auto drivers = device_container_->get_registered_drivers();
+      for (auto it = drivers.begin(); it != drivers.end() && !found_driver; ++it)
+      {
+        auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+        for (auto channel : driver->get_available_motor_channels())
+        {
+          if (driver->get_motor_joint_name(channel) == joint)
+          {
+            found_driver = driver;
+            found_channel = channel;
+            break;
+          }
+        }
+      }
+
+      if (!found_driver)
+      {
+        homing_in_progress_.store(false);
+        response->success = false;
+        response->message = "Joint not found: " + joint;
+        RCLCPP_WARN(kLogger, "Homing failed: %s", response->message.c_str());
+        return;
+      }
+
+      if (found_driver->is_motor_homing(found_channel))
+      {
+        homing_in_progress_.store(false);
+        response->success = false;
+        response->message = "Joint is already homing: " + joint;
+        RCLCPP_WARN(kLogger, "Homing rejected: %s", response->message.c_str());
+        return;
+      }
+
+      // Reap the previous homing thread (it has necessarily finished, since
+      // homing_in_progress_ gates entry to this callback).
+      if (homing_thread_.joinable())
+      {
+        homing_thread_.join();
+      }
+
+      // Run on a dedicated thread: handleHoming() blocks waiting for status-word updates that
+      // are only delivered by this node's own poll timer, which shares the executor with this
+      // service callback. Blocking here would starve that timer and homing would never finish.
+      RCLCPP_INFO(kLogger, "Homing: starting for %s", joint.c_str());
+      homing_thread_ = std::thread([this, found_driver, found_channel, joint]() {
+        bool ok = found_driver->home_motor(found_channel);
+        RCLCPP_INFO(kLogger, "Homing: %s for %s", ok ? "succeeded" : "failed", joint.c_str());
+        homing_in_progress_.store(false);
+      });
+
+      response->success = true;
+      response->message = "Homing started for " + joint + "; check the canopen_402_driver log for completion";
+    });
+
   executor_->add_node(service_node_);
 
   last_offset_save_time_ = rclcpp::Clock().now();
@@ -298,6 +372,12 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
 {
   // Stop the manager first, or it would fight the halt below by re-enabling motors.
   motor_manager_.stop();
+
+  if (homing_thread_.joinable())
+  {
+    RCLCPP_WARN(kLogger, "Waiting for in-progress homing to finish before deactivating");
+    homing_thread_.join();
+  }
 
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)

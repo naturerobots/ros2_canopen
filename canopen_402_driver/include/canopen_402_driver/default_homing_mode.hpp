@@ -26,7 +26,9 @@ namespace ros2_canopen
 
 class DefaultHomingMode : public HomingMode
 {
-  const uint16_t index = 0x6098;
+  // Homing method object (0x6098/0x6898/0x7098), channel-specific - passed in by the caller,
+  // since this class is shared across all three CiA402 motor channels.
+  const uint16_t index;
   std::shared_ptr<LelyDriverBridge> driver;
 
   std::atomic<bool> execute_;
@@ -49,7 +51,10 @@ class DefaultHomingMode : public HomingMode
   }
 
 public:
-  DefaultHomingMode(std::shared_ptr<LelyDriverBridge> driver) { this->driver = driver; }
+  DefaultHomingMode(std::shared_ptr<LelyDriverBridge> driver, uint16_t index = 0x6098) : index(index)
+  {
+    this->driver = driver;
+  }
   virtual bool start();
   virtual bool read(const uint16_t & sw);
   virtual bool write(OpModeAccesser & cw);

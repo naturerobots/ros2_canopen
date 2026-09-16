@@ -271,6 +271,7 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     std::optional<int> default_operation_mode;
     std::optional<int> homing_method;
     std::optional<double> home_offset;
+    std::optional<double> homing_speed;
     try
     {
       joint_name = std::optional(channel_conf["joint_name"].as<std::string>());
@@ -345,6 +346,13 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     catch (...)
     {
     }
+    try
+    {
+      homing_speed = std::optional(channel_conf["homing_speed"].as<double>());
+    }
+    catch (...)
+    {
+    }
 
     motors_[channel] =
         std::make_shared<Motor402>(nullptr,
@@ -354,7 +362,8 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
                                    scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
                                    scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel,
                                    state_switch_timeout_ms,
-                                   static_cast<int8_t>(homing_method.value_or(0)), home_offset.value_or(0.0));
+                                   static_cast<int8_t>(homing_method.value_or(0)), home_offset.value_or(0.0),
+                                   homing_speed.value_or(0.0));
     motor_channels_.push_back(channel);
 
     // create publishers and subscribers

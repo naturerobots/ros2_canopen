@@ -89,7 +89,7 @@ public:
            std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
            double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel,
            uint32_t state_switch_timeout_ms = 1000,
-           int8_t homing_method = 0, double home_offset = 0.0)
+           int8_t homing_method = 0, double home_offset = 0.0, double homing_speed = 0.0)
     : MotorBase()
     , joint_name_(joint_name)
     , scale_pos_to_dev_(scale_pos_to_dev)
@@ -100,6 +100,7 @@ public:
     , channel_(channel)
     , homing_method_(homing_method)
     , home_offset_(home_offset)
+    , homing_speed_(homing_speed)
     , switching_state_(switching_state)
     , monitor_mode_(true)
     , state_switch_timeout_(state_switch_timeout_ms)
@@ -337,16 +338,17 @@ public:
     registerModesChannel1<VelocityMode1>(MotorBase::Velocity, driver);
     registerModesChannel1<ProfiledVelocityMode1>(MotorBase::Profiled_Velocity, driver);
     registerModesChannel1<ProfiledTorqueMode1>(MotorBase::Profiled_Torque, driver);
-    registerModesChannel1<DefaultHomingMode>(MotorBase::Homing, driver);
+    registerModesChannel1<DefaultHomingMode>(MotorBase::Homing, driver, static_cast<uint16_t>(0x6098));
     registerModesChannel1<InterpolatedPositionMode1>(MotorBase::Interpolated_Position, driver);
     registerModesChannel1<CyclicSynchronousPositionMode1>(MotorBase::Cyclic_Synchronous_Position, driver);
     registerModesChannel1<CyclicSynchronousVelocityMode1>(MotorBase::Cyclic_Synchronous_Velocity, driver);
     registerModesChannel1<CyclicSynchronousTorqueMode1>(MotorBase::Cyclic_Synchronous_Torque, driver);
 
-    // !TODO Profiled Position Mode and homing Mode not supportet yet for Channel 2 and 3
+    // !TODO Profiled Position Mode not supportet yet for Channel 2 and 3
     registerModesChannel2<VelocityMode2>(MotorBase::Velocity, driver);
     registerModesChannel2<ProfiledVelocityMode2>(MotorBase::Profiled_Velocity, driver);
     registerModesChannel2<ProfiledTorqueMode2>(MotorBase::Profiled_Torque, driver);
+    registerModesChannel2<DefaultHomingMode>(MotorBase::Homing, driver, static_cast<uint16_t>(0x6898));
     registerModesChannel2<InterpolatedPositionMode2>(MotorBase::Interpolated_Position, driver);
     registerModesChannel2<CyclicSynchronousPositionMode2>(MotorBase::Cyclic_Synchronous_Position, driver);
     registerModesChannel2<CyclicSynchronousVelocityMode2>(MotorBase::Cyclic_Synchronous_Velocity, driver);
@@ -355,6 +357,7 @@ public:
     registerModesChannel3<VelocityMode3>(MotorBase::Velocity, driver);
     registerModesChannel3<ProfiledVelocityMode3>(MotorBase::Profiled_Velocity, driver);
     registerModesChannel3<ProfiledTorqueMode3>(MotorBase::Profiled_Torque, driver);
+    registerModesChannel3<DefaultHomingMode>(MotorBase::Homing, driver, static_cast<uint16_t>(0x7098));
     registerModesChannel3<InterpolatedPositionMode3>(MotorBase::Interpolated_Position, driver);
     registerModesChannel3<CyclicSynchronousPositionMode3>(MotorBase::Cyclic_Synchronous_Position, driver);
     registerModesChannel3<CyclicSynchronousVelocityMode3>(MotorBase::Cyclic_Synchronous_Velocity, driver);
@@ -409,6 +412,16 @@ private:
   virtual bool isModeSupportedByDevice(uint16_t mode, uint8_t channel);
   void registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel);
 
+  /**
+   * @brief Recover implementation shared by handleRecover() and handleHoming()
+   *
+   * handleRecover() itself refuses to run while is_homing_ is set, so that other
+   * callers (e.g. MotorManager) cannot interfere with an in-progress homing sequence.
+   * handleHoming() needs the same recover logic for its own bootstrap step, after
+   * is_homing_ is already true, so it calls this unguarded version directly.
+   */
+  bool recoverInternal();
+
   ModeSharedPtr allocMode(uint16_t mode);
 
   bool switchMode(uint16_t mode);
@@ -430,6 +443,7 @@ private:
   // homing configuration
   int8_t homing_method_ = 0;     // CIA402 homing method (0 = disabled)
   double home_offset_ = 0.0;     // position offset after homing (device units)
+  double homing_speed_ = 0.0;    // speed used while searching for the switch/zero (rad/s, joint units)
 
   std::atomic<uint16_t> status_word_;
   uint16_t control_word_;

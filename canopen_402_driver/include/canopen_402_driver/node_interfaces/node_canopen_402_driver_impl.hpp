@@ -123,6 +123,16 @@ void NodeCanopen402Driver<rclcpp::Node>::setupRosInterfaces(const std::string& j
                       canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
         this->handle_set_target(request, response, channel);
       });
+
+  // Create homing service only if homing_method is configured
+  if (motors_[channel]->getHomingMethod() != 0)
+  {
+    handle_homing_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+        "~/" + joint_name + "/home", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                     std_srvs::srv::Trigger::Response::SharedPtr response) {
+          this->handle_homing(request, response, channel);
+        });
+  }
 }
 
 template <>
@@ -197,6 +207,16 @@ void NodeCanopen402Driver<rclcpp_lifecycle::LifecycleNode>::setupRosInterfaces(c
                       canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response) {
         this->handle_set_target(request, response, channel);
       });
+
+  // Create homing service only if homing_method is configured
+  if (motors_[channel]->getHomingMethod() != 0)
+  {
+    handle_homing_service[channel] = this->node_->create_service<std_srvs::srv::Trigger>(
+        "~/" + joint_name + "/home", [this, channel](const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                     std_srvs::srv::Trigger::Response::SharedPtr response) {
+          this->handle_homing(request, response, channel);
+        });
+  }
 }
 
 template <class NODETYPE>
@@ -249,6 +269,8 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     std::optional<double> scale_vel_from_dev;
     std::optional<int> switching_state;
     std::optional<int> default_operation_mode;
+    std::optional<int> homing_method;
+    std::optional<double> home_offset;
     try
     {
       joint_name = std::optional(channel_conf["joint_name"].as<std::string>());
@@ -309,6 +331,20 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     catch (...)
     {
     }
+    try
+    {
+      homing_method = std::optional(channel_conf["homing_method"].as<int>());
+    }
+    catch (...)
+    {
+    }
+    try
+    {
+      home_offset = std::optional(channel_conf["home_offset"].as<double>());
+    }
+    catch (...)
+    {
+    }
 
     motors_[channel] =
         std::make_shared<Motor402>(nullptr,
@@ -317,7 +353,8 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
                                    joint_name.value(), scale_pos_to_dev.value_or(1000.0),
                                    scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
                                    scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel,
-                                   state_switch_timeout_ms);
+                                   state_switch_timeout_ms,
+                                   static_cast<int8_t>(homing_method.value_or(0)), home_offset.value_or(0.0));
     motor_channels_.push_back(channel);
 
     // create publishers and subscribers
@@ -541,6 +578,69 @@ void NodeCanopen402Driver<NODETYPE>::diagnostic_callback(diagnostic_updater::Dia
              this->diagnostic_collector_->getValue(motor.second->getJointName() + "_cia402_has_communication_failure"));
   }
   stat.summary(summary_level, summary_msg);
+}
+
+template <class NODETYPE>
+void NodeCanopen402Driver<NODETYPE>::handle_homing(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                   std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel)
+{
+  if (!this->activated_.load())
+  {
+    response->success = false;
+    response->message = "Driver not activated";
+    return;
+  }
+
+  // Coordination: halt all motors on first homing request
+  {
+    std::lock_guard<std::mutex> lock(homing_coordination_mutex_);
+    if (active_homing_count_ == 0)
+    {
+      RCLCPP_INFO(this->node_->get_logger(), "Homing: Halting all motors");
+      for (const auto& motor : motors_)
+      {
+        motor.second->handleHalt();
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    active_homing_count_++;
+  }
+
+  // Execute homing on this motor
+  response->success = motors_[channel]->handleHoming();
+
+  // Coordination: recover all motors when last homing completes
+  {
+    std::lock_guard<std::mutex> lock(homing_coordination_mutex_);
+    active_homing_count_--;
+    if (active_homing_count_ == 0)
+    {
+      RCLCPP_INFO(this->node_->get_logger(), "Homing: Recovering all motors");
+      for (const auto& motor : motors_)
+      {
+        motor.second->handleRecover();
+      }
+    }
+  }
+
+  if (response->success)
+  {
+    response->message = "Homing completed successfully";
+  }
+  else
+  {
+    response->message = "Homing failed";
+  }
+}
+
+template <class NODETYPE>
+bool NodeCanopen402Driver<NODETYPE>::home_motor(uint8_t channel)
+{
+  if (this->activated_.load())
+  {
+    return motors_[channel]->handleHoming();
+  }
+  return false;
 }
 
 #endif

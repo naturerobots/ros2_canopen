@@ -125,6 +125,11 @@ public:
     return node_canopen_402_driver_->is_motor_halted(channel);
   }
 
+  bool is_motor_homing(uint8_t channel)
+  {
+    return node_canopen_402_driver_->is_motor_homing(channel);
+  }
+
   bool halt_motor(uint8_t channel)
   {
     return node_canopen_402_driver_->halt_motor(channel);

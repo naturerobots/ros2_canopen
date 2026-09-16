@@ -88,7 +88,8 @@ public:
   Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
            std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
            double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel,
-           uint32_t state_switch_timeout_ms = 1000)
+           uint32_t state_switch_timeout_ms = 1000,
+           int8_t homing_method = 0, double home_offset = 0.0)
     : MotorBase()
     , joint_name_(joint_name)
     , scale_pos_to_dev_(scale_pos_to_dev)
@@ -97,6 +98,8 @@ public:
     , scale_vel_from_dev_(scale_vel_from_dev)
     , default_operation_mode_(default_operation_mode)
     , channel_(channel)
+    , homing_method_(homing_method)
+    , home_offset_(home_offset)
     , switching_state_(switching_state)
     , monitor_mode_(true)
     , state_switch_timeout_(state_switch_timeout_ms)
@@ -203,6 +206,22 @@ public:
   bool handleRecover();
 
   /**
+   * @brief Executes homing procedure
+   *
+   * This function executes the configured homing method,
+   * sets the home offset after completion, and returns
+   * to the default operation mode.
+   *
+   * @return true if homing succeeded
+   */
+  bool handleHoming();
+
+  /**
+   * @brief Returns the configured homing method
+   */
+  int8_t getHomingMethod() const { return homing_method_; }
+
+  /**
    * @brief Checks if there is a Fault
    *
    */
@@ -233,6 +252,11 @@ public:
    *
    */
   bool isHalted();
+
+  /**
+   * @brief Returns whether homing is in progress
+   */
+  bool isHoming() const { return is_homing_; }
 
   /**
    * @brief Reports what the hardware interface's RPDO watchdog sees for this motor
@@ -403,6 +427,10 @@ private:
   // channel
   uint8_t channel_ = 1;
 
+  // homing configuration
+  int8_t homing_method_ = 0;     // CIA402 homing method (0 = disabled)
+  double home_offset_ = 0.0;     // position offset after homing (device units)
+
   std::atomic<uint16_t> status_word_;
   uint16_t control_word_;
   std::mutex cw_mutex_;
@@ -444,6 +472,7 @@ private:
   // whill switch to true when initialization procedure has finished
   bool initialized_ = false;
   bool has_communication_failure_ = false;
+  std::atomic<bool> is_homing_{false};
 
   // Set by the hardware interface's RPDO watchdog, read by handleDiag()
   std::string motion_status_;

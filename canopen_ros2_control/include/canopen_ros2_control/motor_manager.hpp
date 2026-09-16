@@ -37,6 +37,7 @@ enum class MotorHealth
   Uninitialized,         //!< Init sequence has not completed.
   Faulty,                //!< Reachable but not in Operation_Enable (e-stop, over-current, ...).
   WrongMode,             //!< Enabled, but the operation mode did not take.
+  Homing,                //!< Motor is executing homing procedure, do not interfere.
 };
 
 const char* to_string(MotorHealth health);

@@ -40,6 +40,8 @@ const char* to_string(MotorHealth health)
       return "faulty";
     case MotorHealth::WrongMode:
       return "wrong operation mode";
+    case MotorHealth::Homing:
+      return "homing";
   }
   return "unknown";
 }
@@ -278,6 +280,11 @@ void MotorManager::logTransition(ManagedMotor& motor, MotorHealth next, std::chr
 
 MotorHealth MotorManager::checkHealth(const ManagedMotor& motor) const
 {
+  // Homing takes priority: motor is busy with user-requested procedure, do not interfere.
+  if (motor.driver->is_motor_homing(motor.channel))
+  {
+    return MotorHealth::Homing;
+  }
   // Order matters: a silent node says nothing useful about its CiA402 state, and a motor that
   // never ran init has no meaningful mode.
   if (motor.driver->has_motor_communication_failure(motor.channel))
@@ -391,6 +398,10 @@ void MotorManager::serviceMotor(ManagedMotor& motor)
       motor.consecutive_failures = 0;
       return;
     }
+
+    case MotorHealth::Homing:
+      // User-initiated homing in progress, do not interfere.
+      return;
   }
 }
 

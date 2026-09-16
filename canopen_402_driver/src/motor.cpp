@@ -17,6 +17,7 @@
 //
 
 #include "canopen_402_driver/motor.hpp"
+#include "canopen_402_driver/homing_mode.hpp"
 using namespace ros2_canopen;
 
 namespace
@@ -657,6 +658,7 @@ bool Motor402::handleHalt()
 }
 bool Motor402::handleRecover()
 {
+  if (is_homing_) return false;  // don't interfere with homing
   start_fault_reset_ = true;
   {
     std::scoped_lock lock(mode_mutex_);
@@ -671,6 +673,127 @@ bool Motor402::handleRecover()
     setLastError("recover: could not reach Operation_Enable");
     return false;
   }
+  return true;
+}
+
+bool Motor402::handleHoming()
+{
+  if (homing_method_ == 0)
+  {
+    RCLCPP_WARN(rclcpp::get_logger("canopen_402_driver"), "Homing method not configured");
+    return false;
+  }
+
+  is_homing_ = true;
+  struct HomingGuard { std::atomic<bool>& flag; ~HomingGuard() { flag = false; } } guard{is_homing_};
+
+  // Determine CANopen indices based on channel
+  uint16_t homing_method_index;
+  uint16_t home_offset_index;
+  if (channel_ == 1)
+  {
+    homing_method_index = 0x6098;
+    home_offset_index = 0x607C;
+  }
+  else if (channel_ == 2)
+  {
+    homing_method_index = 0x6898;
+    home_offset_index = 0x687C;
+  }
+  else if (channel_ == 3)
+  {
+    homing_method_index = 0x7098;
+    home_offset_index = 0x707C;
+  }
+  else
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Invalid channel for homing");
+    return false;
+  }
+
+  // Recover to operation enable state (halt is done by coordinator for all motors)
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Enabling motor %s", joint_name_.c_str());
+  if (!handleRecover())
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enable motor for homing");
+    return false;
+  }
+
+  // Write homing method
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Setting homing method %d for %s",
+              homing_method_, joint_name_.c_str());
+  try
+  {
+    driver->universal_set_value<int8_t>(homing_method_index, 0x0, homing_method_);
+  }
+  catch (std::exception& e)
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Failed to set homing method: %s", e.what());
+    return false;
+  }
+
+  // Switch to homing mode
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Switching to homing mode for %s", joint_name_.c_str());
+  ModeSharedPtr m = allocMode(MotorBase::Homing);
+  if (!m)
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Homing mode not supported");
+    return false;
+  }
+
+  HomingMode* homing = dynamic_cast<HomingMode*>(m.get());
+  if (!homing)
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Homing mode has incorrect handler");
+    return false;
+  }
+
+  if (!switchMode(MotorBase::Homing))
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enter homing mode");
+    return false;
+  }
+
+  // Execute homing
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Executing homing for %s", joint_name_.c_str());
+  if (!homing->executeHoming())
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Homing execution failed");
+    switchMode(MotorBase::No_Mode);
+    return false;
+  }
+
+  // Set home offset
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Setting home offset %.4f for %s",
+              home_offset_, joint_name_.c_str());
+  try
+  {
+    int32_t offset_dev = static_cast<int32_t>(home_offset_ * scale_pos_to_dev_);
+    driver->universal_set_value<int32_t>(home_offset_index, 0x0, offset_dev);
+  }
+  catch (std::exception& e)
+  {
+    RCLCPP_WARN(rclcpp::get_logger("canopen_402_driver"), "Failed to set home offset: %s", e.what());
+    // Continue anyway - homing succeeded
+  }
+
+  // Switch back to no mode, then to default operation mode
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Returning to normal operation for %s",
+              joint_name_.c_str());
+  if (!switchMode(MotorBase::No_Mode))
+  {
+    RCLCPP_WARN(rclcpp::get_logger("canopen_402_driver"), "Could not exit homing mode");
+  }
+
+  if (default_operation_mode_ != 0)
+  {
+    if (!switchMode(default_operation_mode_))
+    {
+      RCLCPP_WARN(rclcpp::get_logger("canopen_402_driver"), "Could not switch to default operation mode");
+    }
+  }
+
+  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Homing: Complete for %s", joint_name_.c_str());
   return true;
 }
 

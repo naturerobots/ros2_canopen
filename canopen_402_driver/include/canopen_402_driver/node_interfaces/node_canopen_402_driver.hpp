@@ -52,7 +52,12 @@ protected:
   std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_cyclic_position_service;
   std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_set_mode_interpolated_position_service;
   std::map<uint8_t, rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr> handle_set_target_service;
+  std::map<uint8_t, rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr> handle_homing_service;
   std::map<uint8_t, rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr> publish_joint_state;
+
+  // Homing coordination: track active homings to halt all motors on first, recover all on last
+  std::mutex homing_coordination_mutex_;
+  int active_homing_count_ = 0;
 
   void publish();
   virtual void poll_timer_callback() override;
@@ -98,6 +103,11 @@ public:
   virtual bool is_motor_halted(uint8_t channel)
   {
     return motors_[channel]->isHalted();
+  }
+
+  virtual bool is_motor_homing(uint8_t channel)
+  {
+    return motors_[channel]->isHoming();
   }
 
   virtual double get_speed(uint8_t channel)
@@ -262,6 +272,27 @@ public:
    * @return bool
    */
   bool set_target(uint8_t channel, double target);
+
+  /**
+   * @brief Service Callback to execute homing
+   *
+   * Calls Motor402::handleHoming function. Executes the configured
+   * homing method and sets the home offset.
+   *
+   * @param [in] request
+   * @param [out] response
+   */
+  void handle_homing(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                     std_srvs::srv::Trigger::Response::SharedPtr response, uint8_t channel);
+
+  /**
+   * @brief Method to execute homing
+   *
+   * Calls Motor402::handleHoming function.
+   *
+   * @return bool
+   */
+  bool home_motor(uint8_t channel);
 };
 }  // namespace node_interfaces
 }  // namespace ros2_canopen

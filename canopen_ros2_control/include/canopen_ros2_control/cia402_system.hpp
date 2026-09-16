@@ -31,7 +31,10 @@
 #include "canopen_ros2_control/motor_manager.hpp"
 #include <std_srvs/srv/trigger.hpp>
 #include "canopen_ros2_control/srv/adjust_position_offset.hpp"
+#include "canopen_ros2_control/srv/home_joint.hpp"
+#include <atomic>
 #include <set>
+#include <thread>
 
 constexpr double kResponseOk = 1.0;
 constexpr double kResponseFail = 0.0;
@@ -96,7 +99,24 @@ protected:
   rclcpp::Time last_offset_save_time_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_position_home_service_;
   rclcpp::Service<canopen_ros2_control::srv::AdjustPositionOffset>::SharedPtr adjust_position_offset_service_;
+  rclcpp::Service<canopen_ros2_control::srv::HomeJoint>::SharedPtr home_joint_service_;
   std::shared_ptr<rclcpp::Node> service_node_;
+  /// service_node_'s OWN executor/thread, deliberately NOT the shared executor_ that spins
+  /// device_container_ (and therefore every CANopen driver node's poll_timer_, which is what
+  /// actually transmits PDOs - see NodeCanopenBaseDriver's create_wall_timer). home_joint_service_
+  /// blocks its calling thread until homing finishes (by design, so the RPC is synchronous) -
+  /// if that callback ran on the shared executor_, blocking it would starve poll_timer_ for
+  /// EVERY node for the whole homing duration, and the homing motor's own commands would never
+  /// actually reach the bus. Isolating service_node_ here keeps that block from touching PDO
+  /// transmission at all.
+  std::shared_ptr<rclcpp::Executor> service_executor_;
+  std::unique_ptr<std::thread> service_spin_thread_;
+
+  /// Guards position_offsets_ and offset_enabled_joints_, which read()/write() (the RT thread)
+  /// read every cycle while the homing thread and the offset services (running on service_node_'s
+  /// executor thread) can write them. Held only very briefly (map/set lookups, no I/O), so it's
+  /// safe on the RT path.
+  std::mutex offset_mutex_;
 
   void initializePositionOffsets();
   void savePositionOffsets();
@@ -111,6 +131,38 @@ protected:
 
   /// Last is_operational() seen by write(), so the transition is logged once.
   bool drives_operational_ = false;
+
+  // --- Homing: drives a joint at its configured homing_speed (through the normal setTarget()/
+  // PDO pathway, no mode switch - see Motor402::isHomingEnabled() and friends for the bus.yaml
+  // config this reads) until a configurable digital object reads its configured "triggered"
+  // value, then captures the resulting position_offsets_ entry so ros2_control sees home_offset
+  // at that physical position. Runs entirely here, not in canopen_402_driver/MotorManager - see
+  // the "not touching the recovery technique" instruction this was built to satisfy.
+  std::thread homing_thread_;
+  /// Guards homing_thread_ ITSELF (assignment/join), separate from homing_mutex_ (which guards
+  /// the homing work data below): home_joint_service_ now blocks across the whole join(), and if
+  /// that used homing_mutex_ instead, runHomingSequence()'s own brief homing_mutex_ lock (to set
+  /// homing_joint_name_/homing_target_velocity_) would deadlock against it.
+  std::mutex homing_thread_mutex_;
+  std::atomic<bool> homing_in_progress_{ false };  // guards the service against a second concurrent request
+  std::atomic<bool> homing_active_{ false };       // true while write() should override the target below
+  std::mutex homing_mutex_;
+  std::string homing_joint_name_;       // which joint write() should override, while homing_active_
+  double homing_target_velocity_ = 0.0;  // joint-space rad/s to write for that joint, while homing_active_
+
+  struct HomingResult
+  {
+    bool success;
+    std::string message;
+  };
+
+  /// Runs on homing_thread_: drives `joint_name` at its configured homing speed until its home
+  /// switch object reads triggered (or times out), then sets position_offsets_ so its home_offset
+  /// applies at that physical position. Leaves the motor's velocity at 0 either way. The calling
+  /// service callback joins homing_thread_ before returning, so this result reaches the RPC
+  /// response - see the home_joint_service_ comment on why that join is safe here.
+  HomingResult runHomingSequence(std::shared_ptr<ros2_canopen::Cia402Driver> driver, uint8_t channel,
+                                  const std::string& joint_name);
 
 private:
   void initDeviceContainer();

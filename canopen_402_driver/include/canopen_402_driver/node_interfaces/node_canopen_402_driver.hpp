@@ -125,6 +125,51 @@ public:
     return motors_[channel]->getJointName();
   }
 
+  virtual bool is_homing_enabled(uint8_t channel)
+  {
+    return motors_[channel]->isHomingEnabled();
+  }
+
+  virtual double get_homing_speed(uint8_t channel)
+  {
+    return motors_[channel]->getHomingSpeed();
+  }
+
+  virtual double get_home_offset(uint8_t channel)
+  {
+    return motors_[channel]->getHomeOffset();
+  }
+
+  virtual uint16_t get_home_switch_index(uint8_t channel)
+  {
+    return motors_[channel]->getHomeSwitchIndex();
+  }
+
+  virtual uint8_t get_home_switch_subindex(uint8_t channel)
+  {
+    return motors_[channel]->getHomeSwitchSubindex();
+  }
+
+  virtual int32_t get_home_switch_active_value(uint8_t channel)
+  {
+    return motors_[channel]->getHomeSwitchActiveValue();
+  }
+
+  virtual double get_home_max_travel(uint8_t channel)
+  {
+    return motors_[channel]->getHomeMaxTravel();
+  }
+
+  virtual double get_homing_timeout(uint8_t channel)
+  {
+    return motors_[channel]->getHomingTimeout();
+  }
+
+  virtual bool is_home_switch_triggered(uint8_t channel, bool& triggered)
+  {
+    return motors_[channel]->isHomeSwitchTriggered(triggered);
+  }
+
   /**
    * @brief Service Callback to initialise device
    *

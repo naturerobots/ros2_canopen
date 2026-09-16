@@ -154,6 +154,51 @@ public:
   {
     return node_canopen_402_driver_->get_motor_joint_name(channel);
   }
+
+  bool is_homing_enabled(uint8_t channel)
+  {
+    return node_canopen_402_driver_->is_homing_enabled(channel);
+  }
+
+  double get_homing_speed(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_homing_speed(channel);
+  }
+
+  double get_home_offset(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_home_offset(channel);
+  }
+
+  uint16_t get_home_switch_index(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_home_switch_index(channel);
+  }
+
+  uint8_t get_home_switch_subindex(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_home_switch_subindex(channel);
+  }
+
+  int32_t get_home_switch_active_value(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_home_switch_active_value(channel);
+  }
+
+  double get_home_max_travel(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_home_max_travel(channel);
+  }
+
+  double get_homing_timeout(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_homing_timeout(channel);
+  }
+
+  bool is_home_switch_triggered(uint8_t channel, bool& triggered)
+  {
+    return node_canopen_402_driver_->is_home_switch_triggered(channel, triggered);
+  }
 };
 }  // namespace ros2_canopen
 

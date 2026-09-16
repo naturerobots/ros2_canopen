@@ -32,6 +32,8 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include <tuple>
+#include <vector>
 
 namespace
 {
@@ -49,6 +51,21 @@ Cia402System::~Cia402System()
 {
   // Before ~CanopenSystem() destroys the device container the manager thread uses.
   motor_manager_.stop();
+  {
+    std::scoped_lock lock(homing_thread_mutex_);
+    if (homing_thread_.joinable())
+    {
+      homing_thread_.join();
+    }
+  }
+  if (service_executor_)
+  {
+    service_executor_->cancel();
+  }
+  if (service_spin_thread_ && service_spin_thread_->joinable())
+  {
+    service_spin_thread_->join();
+  }
 }
 
 hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interface::HardwareInfo& info)
@@ -249,9 +266,10 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
         for (auto channel : driver->get_available_motor_channels())
         {
           std::string joint = driver->get_motor_joint_name(channel);
+          double raw = driver->get_position(channel);
+          std::scoped_lock lock(offset_mutex_);
           // Only reset offset for enabled joints
           if (offset_enabled_joints_.count(joint) == 0) continue;
-          double raw = driver->get_position(channel);
           position_offsets_[joint] = -raw;
         }
       }
@@ -266,26 +284,101 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
     [this](const std::shared_ptr<canopen_ros2_control::srv::AdjustPositionOffset::Request> request,
            std::shared_ptr<canopen_ros2_control::srv::AdjustPositionOffset::Response> response) {
       const std::string& joint = request->joint_name;
-
-      // Check if joint exists and has offset enabled
-      if (offset_enabled_joints_.count(joint) == 0)
+      double new_offset;
       {
-        response->success = false;
-        response->message = "Joint not found or offset not enabled: " + joint;
-        RCLCPP_WARN(kLogger, "Adjust offset failed: %s", response->message.c_str());
-        return;
+        std::scoped_lock lock(offset_mutex_);
+        // Check if joint exists and has offset enabled
+        if (offset_enabled_joints_.count(joint) == 0)
+        {
+          response->success = false;
+          response->message = "Joint not found or offset not enabled: " + joint;
+          RCLCPP_WARN(kLogger, "Adjust offset failed: %s", response->message.c_str());
+          return;
+        }
+        position_offsets_[joint] += request->offset_delta;
+        new_offset = position_offsets_[joint];
       }
-
-      position_offsets_[joint] += request->offset_delta;
       savePositionOffsets();
 
       RCLCPP_INFO(kLogger, "Adjusted offset for %s by %.4f, new offset: %.4f",
-                  joint.c_str(), request->offset_delta, position_offsets_[joint]);
+                  joint.c_str(), request->offset_delta, new_offset);
       response->success = true;
       response->message = "Offset adjusted successfully";
     });
 
-  executor_->add_node(service_node_);
+  home_joint_service_ = service_node_->create_service<canopen_ros2_control::srv::HomeJoint>(
+    "~/home_joint",
+    [this](const std::shared_ptr<canopen_ros2_control::srv::HomeJoint::Request> request,
+           std::shared_ptr<canopen_ros2_control::srv::HomeJoint::Response> response) {
+      const std::string& joint = request->joint_name;
+
+      if (homing_in_progress_.exchange(true))
+      {
+        response->success = false;
+        response->message = "Another homing operation is already in progress";
+        RCLCPP_WARN(kLogger, "Homing rejected for %s: %s", joint.c_str(), response->message.c_str());
+        return;
+      }
+
+      std::shared_ptr<ros2_canopen::Cia402Driver> found_driver;
+      uint8_t found_channel = 0;
+      auto drivers = device_container_->get_registered_drivers();
+      for (auto it = drivers.begin(); it != drivers.end() && !found_driver; ++it)
+      {
+        auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+        for (auto channel : driver->get_available_motor_channels())
+        {
+          if (driver->get_motor_joint_name(channel) == joint)
+          {
+            found_driver = driver;
+            found_channel = channel;
+            break;
+          }
+        }
+      }
+
+      if (!found_driver || !found_driver->is_homing_enabled(found_channel))
+      {
+        homing_in_progress_.store(false);
+        response->success = false;
+        response->message = "Joint not found or homing not enabled: " + joint;
+        RCLCPP_WARN(kLogger, "Homing failed: %s", response->message.c_str());
+        return;
+      }
+
+      // This callback runs on service_executor_ (its own, dedicated executor/thread - see the
+      // member comment in cia402_system.hpp), NOT the shared executor_ that every CANopen driver
+      // node's poll_timer_ depends on for PDO transmission. That's what makes blocking here for
+      // the whole homing run safe: it doesn't stop RPDOs (including the homing motor's own
+      // command, and the "stop everyone else" override in write()) from continuing to go out.
+      RCLCPP_INFO(kLogger, "Homing: starting for %s (blocking until it finishes)", joint.c_str());
+      HomingResult result{ false, "" };
+      {
+        std::scoped_lock lock(homing_thread_mutex_);
+        if (homing_thread_.joinable())
+        {
+          // Reap the previous homing thread - it has necessarily finished, since
+          // homing_in_progress_ gates entry to this callback.
+          homing_thread_.join();
+        }
+        homing_thread_ = std::thread([this, found_driver, found_channel, joint, &result]() {
+          result = runHomingSequence(found_driver, found_channel, joint);
+        });
+        homing_thread_.join();
+      }
+
+      homing_in_progress_.store(false);
+      response->success = result.success;
+      response->message = result.message;
+      RCLCPP_INFO(kLogger, "Homing: %s for %s - %s", result.success ? "succeeded" : "failed",
+                  joint.c_str(), result.message.c_str());
+    });
+
+  // Deliberately NOT executor_->add_node(service_node_) - see the member comment in
+  // cia402_system.hpp for why home_joint_service_ needs its own, separate executor to block on.
+  service_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  service_executor_->add_node(service_node_);
+  service_spin_thread_ = std::make_unique<std::thread>([this]() { service_executor_->spin(); });
 
   last_offset_save_time_ = rclcpp::Clock().now();
 
@@ -298,6 +391,19 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
 {
   // Stop the manager first, or it would fight the halt below by re-enabling motors.
   motor_manager_.stop();
+
+  // Must finish (or time out) before the halt loop below and before the device container
+  // that runHomingSequence() is using gets torn down further down the shutdown path. Locked
+  // via homing_thread_mutex_ since home_joint_service_ may itself be blocked in join() on this
+  // same thread object right now - see that mutex's comment.
+  {
+    std::scoped_lock lock(homing_thread_mutex_);
+    if (homing_thread_.joinable())
+    {
+      RCLCPP_WARN(kLogger, "Waiting for in-progress homing to finish before deactivating");
+      homing_thread_.join();
+    }
+  }
 
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
@@ -334,8 +440,16 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
       std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
       double raw_position = motion_controller_driver->get_position(motor_channel);
 
-      // Only apply offset for enabled joints
-      double offset = (offset_enabled_joints_.count(joint_name) > 0) ? position_offsets_[joint_name] : 0.0;
+      double offset = 0.0;
+      bool offset_enabled = false;
+      {
+        std::scoped_lock lock(offset_mutex_);
+        offset_enabled = offset_enabled_joints_.count(joint_name) > 0;
+        if (offset_enabled)
+        {
+          offset = position_offsets_[joint_name];
+        }
+      }
       motor_data_[joint_name].actual_position = raw_position + offset;
       motor_data_[joint_name].actual_speed = motion_controller_driver->get_speed(motor_channel);
 
@@ -343,7 +457,7 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
       if (motion_controller_driver->has_motor_communication_failure(motor_channel))
       {
         com_failure = true;
-        if (offset_enabled_joints_.count(joint_name) > 0)
+        if (offset_enabled)
         {
           any_enabled_joint_has_com_failure = true;
         }
@@ -363,8 +477,13 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
   // Initialize offsets on first successful read of all enabled joints
   // Only once the drives are powered. With the e-stop engaged CANopen answers happily while
   // the drives are dead, and offsets captured then get persisted and reused on the next boot.
+  bool have_enabled_joints = false;
+  {
+    std::scoped_lock lock(offset_mutex_);
+    have_enabled_joints = !offset_enabled_joints_.empty();
+  }
   if (!offsets_initialized_ && motor_manager_.is_operational() && !any_enabled_joint_has_com_failure &&
-      !offset_enabled_joints_.empty())
+      have_enabled_joints)
   {
     initializePositionOffsets();
     offsets_initialized_ = true;
@@ -451,6 +570,26 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
       std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
+
+      // While homing, override this joint's target with the configured homing speed - through
+      // the exact same set_target()/PDO pathway as any other velocity command, so it's naturally
+      // re-transmitted every SYNC without any special-case refresh logic here. Does not touch
+      // MotorManager or change the mode: see runHomingSequence() for why that's deliberate.
+      // Every OTHER motor is held at zero for the duration - the vehicle must not be moving
+      // anywhere else while one axis is searching for its endstop.
+      if (homing_active_.load(std::memory_order_acquire))
+      {
+        std::string active_joint;
+        double active_speed;
+        {
+          std::scoped_lock lock(homing_mutex_);
+          active_joint = homing_joint_name_;
+          active_speed = homing_target_velocity_;
+        }
+        motion_controller_driver->set_target(motor_channel, (joint_name == active_joint) ? active_speed : 0.0);
+        continue;
+      }
+
       const uint16_t& mode = motion_controller_driver->get_mode(motor_channel);
 
       switch (mode)
@@ -461,8 +600,14 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
         case MotorBase::Cyclic_Synchronous_Position:
         case MotorBase::Interpolated_Position:
         {
-          // Subtract offset only for enabled joints
-          double offset = (offset_enabled_joints_.count(joint_name) > 0) ? position_offsets_[joint_name] : 0.0;
+          double offset = 0.0;
+          {
+            std::scoped_lock lock(offset_mutex_);
+            if (offset_enabled_joints_.count(joint_name) > 0)
+            {
+              offset = position_offsets_[joint_name];
+            }
+          }
           motion_controller_driver->set_target(
               motor_channel,
               motor_data_[joint_name].target_position - offset);
@@ -517,14 +662,8 @@ void Cia402System::savePositionOffsets()
     std::filesystem::create_directories(file_path.parent_path());
   }
 
-  std::string tmp_path = offset_file_path_ + ".tmp";
-  std::ofstream file(tmp_path);
-  if (!file.is_open())
-  {
-    RCLCPP_WARN(kLogger, "Failed to open position offset file for writing: %s", tmp_path.c_str());
-    return;
-  }
-
+  // Snapshot under the lock; do the file I/O without holding it.
+  std::vector<std::tuple<std::string, double, double>> entries;  // joint, raw, offset
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -532,11 +671,24 @@ void Cia402System::savePositionOffsets()
     for (auto channel : driver->get_available_motor_channels())
     {
       std::string joint_name = driver->get_motor_joint_name(channel);
+      double raw = driver->get_position(channel);
+      std::scoped_lock lock(offset_mutex_);
       // Only save offset-enabled joints
       if (offset_enabled_joints_.count(joint_name) == 0) continue;
-      double raw = driver->get_position(channel);
-      file << joint_name << " " << raw << " " << position_offsets_[joint_name] << "\n";
+      entries.emplace_back(joint_name, raw, position_offsets_[joint_name]);
     }
+  }
+
+  std::string tmp_path = offset_file_path_ + ".tmp";
+  std::ofstream file(tmp_path);
+  if (!file.is_open())
+  {
+    RCLCPP_WARN(kLogger, "Failed to open position offset file for writing: %s", tmp_path.c_str());
+    return;
+  }
+  for (const auto& entry : entries)
+  {
+    file << std::get<0>(entry) << " " << std::get<1>(entry) << " " << std::get<2>(entry) << "\n";
   }
   file.close();
 
@@ -554,6 +706,7 @@ void Cia402System::initializePositionOffsets()
     return;
   }
 
+  std::scoped_lock lock(offset_mutex_);
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -593,6 +746,98 @@ void Cia402System::initializePositionOffsets()
       }
     }
   }
+}
+
+Cia402System::HomingResult Cia402System::runHomingSequence(std::shared_ptr<ros2_canopen::Cia402Driver> driver,
+                                                            uint8_t channel, const std::string& joint_name)
+{
+  const double speed = driver->get_homing_speed(channel);
+  const double home_offset = driver->get_home_offset(channel);
+  const uint16_t switch_index = driver->get_home_switch_index(channel);
+  const uint8_t switch_subindex = driver->get_home_switch_subindex(channel);
+  const int32_t switch_active_value = driver->get_home_switch_active_value(channel);
+  const double max_travel = driver->get_home_max_travel(channel);
+  const double timeout_s = driver->get_homing_timeout(channel);
+  const double start_position = driver->get_position(channel);
+
+  RCLCPP_INFO(kLogger, "Homing %s: driving at %.4f rad/s, watching 0x%04X:%hhu for value %d, "
+                       "max travel %.4f rad, timeout %.1f s",
+              joint_name.c_str(), speed, switch_index, switch_subindex, switch_active_value, max_travel,
+              timeout_s);
+
+  // write() picks this up every cycle from here on and writes it through set_target() instead
+  // of the normal command - the exact same PDO pathway, no mode switch, nothing MotorManager
+  // would treat any differently than a normal velocity command.
+  {
+    std::scoped_lock lock(homing_mutex_);
+    homing_joint_name_ = joint_name;
+    homing_target_velocity_ = speed;
+  }
+  homing_active_.store(true, std::memory_order_release);
+
+  bool triggered = false;
+  bool aborted_for_safety = false;
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(static_cast<int64_t>(timeout_s * 1000.0));
+  while (std::chrono::steady_clock::now() < deadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // is_home_switch_triggered() uses the same bounded-timeout mechanism get_position() does
+    // (see Motor402::isHomeSwitchTriggered()'s comment) - driver->sdo_read(COData) was used
+    // here originally and hung forever on this device's BOOLEAN-typed switch object, which is
+    // exactly why the travel check below exists too: the switch read must never be the only
+    // thing standing between a homing request and unbounded motion.
+    bool switch_triggered = false;
+    if (driver->is_home_switch_triggered(channel, switch_triggered) && switch_triggered)
+    {
+      triggered = true;
+      break;
+    }
+
+    const double traveled = std::abs(driver->get_position(channel) - start_position);
+    if (traveled > max_travel)
+    {
+      RCLCPP_ERROR(kLogger, "Homing %s: exceeded max travel (%.4f > %.4f rad) without seeing the "
+                            "home switch - aborting for safety", joint_name.c_str(), traveled, max_travel);
+      aborted_for_safety = true;
+      break;
+    }
+  }
+
+  // Stop overriding the target - write() reverts to whatever ros2_control is commanding next
+  // cycle. This is the "motor is released" step; nothing else to do for it.
+  homing_active_.store(false, std::memory_order_release);
+
+  if (aborted_for_safety)
+  {
+    std::ostringstream msg;
+    msg << "Exceeded max travel without seeing the home switch";
+    return { false, msg.str() };
+  }
+
+  if (!triggered)
+  {
+    RCLCPP_ERROR(kLogger, "Homing %s: timed out waiting for the home switch", joint_name.c_str());
+    return { false, "Timed out waiting for the home switch" };
+  }
+
+  const double raw_position = driver->get_position(channel);
+  const double new_offset = home_offset - raw_position;
+  {
+    std::scoped_lock lock(offset_mutex_);
+    position_offsets_[joint_name] = new_offset;
+    offset_enabled_joints_.insert(joint_name);
+  }
+  savePositionOffsets();
+
+  RCLCPP_INFO(kLogger, "Homing %s: complete - raw position %.4f, offset %.4f, now reports %.4f",
+              joint_name.c_str(), raw_position, new_offset, raw_position + new_offset);
+
+  std::ostringstream msg;
+  msg << "Homing complete - raw position " << raw_position << ", offset " << new_offset
+      << ", now reports " << (raw_position + new_offset);
+  return { true, msg.str() };
 }
 
 }  // namespace canopen_ros2_control

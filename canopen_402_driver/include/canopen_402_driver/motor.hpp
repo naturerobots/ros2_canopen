@@ -88,7 +88,11 @@ public:
   Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
            std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
            double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel,
-           uint32_t state_switch_timeout_ms = 1000)
+           uint32_t state_switch_timeout_ms = 1000,
+           bool homing_enabled = false, double homing_speed = 0.0, double home_offset = 0.0,
+           uint16_t home_switch_index = 0, uint8_t home_switch_subindex = 0,
+           int32_t home_switch_active_value = 1, double home_max_travel = 6.283185307179586,
+           double homing_timeout = 30.0)
     : MotorBase()
     , joint_name_(joint_name)
     , scale_pos_to_dev_(scale_pos_to_dev)
@@ -97,6 +101,14 @@ public:
     , scale_vel_from_dev_(scale_vel_from_dev)
     , default_operation_mode_(default_operation_mode)
     , channel_(channel)
+    , homing_enabled_(homing_enabled)
+    , homing_speed_(homing_speed)
+    , home_offset_(home_offset)
+    , home_switch_index_(home_switch_index)
+    , home_switch_subindex_(home_switch_subindex)
+    , home_switch_active_value_(home_switch_active_value)
+    , home_max_travel_(home_max_travel)
+    , homing_timeout_(homing_timeout)
     , switching_state_(switching_state)
     , monitor_mode_(true)
     , state_switch_timeout_(state_switch_timeout_ms)
@@ -137,6 +149,69 @@ public:
   uint16_t getDefaultOperationMode() const
   {
     return default_operation_mode_;
+  }
+
+  /**
+   * @brief Homing configuration, read from bus.yaml per motor channel.
+   *
+   * Homing itself is NOT implemented here: the motor never changes operation mode for it, it's
+   * simply driven at homing_speed_ (via the normal setTarget()/PDO pathway, whatever mode is
+   * already active) until isHomeSwitchTriggered() reports the configured digital object reads
+   * home_switch_active_value_, by the homing state machine in canopen_ros2_control's Cia402System
+   * (which owns write()). These getters just expose the bus.yaml config to it. home_max_travel_
+   * is an independent safety bound on top of the switch read - see getHomeMaxTravel().
+   */
+  bool isHomingEnabled() const
+  {
+    return homing_enabled_;
+  }
+
+  double getHomingSpeed() const
+  {
+    return homing_speed_;
+  }
+
+  double getHomeOffset() const
+  {
+    return home_offset_;
+  }
+
+  uint16_t getHomeSwitchIndex() const
+  {
+    return home_switch_index_;
+  }
+
+  uint8_t getHomeSwitchSubindex() const
+  {
+    return home_switch_subindex_;
+  }
+
+  int32_t getHomeSwitchActiveValue() const
+  {
+    return home_switch_active_value_;
+  }
+
+  /**
+   * @brief Independent safety bound (rad, magnitude) on total homing travel.
+   *
+   * Exists because the switch-detection read can fail/hang for reasons unrelated to whether
+   * the switch is actually reached (see isHomeSwitchTriggered()'s comment - this is exactly
+   * what was missing when a boolean-typed home switch object's read hung forever and drove a
+   * motor into its end-stop). Homing must never rely solely on the switch read succeeding.
+   */
+  double getHomeMaxTravel() const
+  {
+    return home_max_travel_;
+  }
+
+  /**
+   * @brief Overall time bound (seconds) for one homing run - the other independent safety
+   * bound alongside getHomeMaxTravel(), in case the switch is never reached within a sane time
+   * even without exceeding the travel limit (e.g. homing_speed configured too low).
+   */
+  double getHomingTimeout() const
+  {
+    return homing_timeout_;
   }
 
   void setDriver(std::shared_ptr<LelyDriverBridge> driver)
@@ -381,6 +456,40 @@ public:
     this->diag_collector_ = status;
   }
 
+  /**
+   * @brief Reads the configured home switch object and reports whether it's triggered.
+   *
+   * Uses universal_get_value<uint8_t>() - the same bounded-timeout (20ms) mechanism
+   * get_position()/get_speed() already use successfully - rather than the generic
+   * driver->sdo_read(COData) path, which dynamically dispatches on the object's CANopen
+   * data type and has no case for BOOLEAN (0x0001). Roboteq's own digital-input status
+   * object (0x2145) is BOOLEAN, not UNSIGNED8 like most other objects on this device, so
+   * that path's promise is never fulfilled for it and the caller's wait() never returns -
+   * found the hard way: homing hung forever and drove a motor into its end-stop.
+   *
+   * @param[out] triggered set to true if the object currently reads home_switch_active_value_
+   * @return true if the read itself succeeded (triggered is meaningful), false on
+   *         communication failure/timeout (caller should NOT treat that as "not triggered
+   *         forever" without its own independent bound - see home_max_travel_)
+   */
+  bool isHomeSwitchTriggered(bool& triggered)
+  {
+    if (this->driver == nullptr)
+    {
+      return false;
+    }
+    try
+    {
+      uint8_t value = this->driver->universal_get_value<uint8_t>(home_switch_index_, home_switch_subindex_);
+      triggered = (static_cast<int32_t>(value) == home_switch_active_value_);
+      return true;
+    }
+    catch (std::exception&)
+    {
+      return false;
+    }
+  }
+
 private:
   virtual bool isModeSupportedByDevice(uint16_t mode, uint8_t channel);
   void registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel);
@@ -402,6 +511,16 @@ private:
 
   // channel
   uint8_t channel_ = 1;
+
+  // homing configuration (see the getters above for what these mean)
+  bool homing_enabled_ = false;
+  double homing_speed_ = 0.0;
+  double home_offset_ = 0.0;
+  uint16_t home_switch_index_ = 0;
+  uint8_t home_switch_subindex_ = 0;
+  int32_t home_switch_active_value_ = 1;
+  double home_max_travel_ = 6.283185307179586;  // 2*pi rad, magnitude - see getHomeMaxTravel()
+  double homing_timeout_ = 30.0;  // seconds - see getHomingTimeout()
 
   std::atomic<uint16_t> status_word_;
   uint16_t control_word_;

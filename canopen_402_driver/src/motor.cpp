@@ -19,6 +19,33 @@
 #include "canopen_402_driver/motor.hpp"
 using namespace ros2_canopen;
 
+namespace
+{
+/// printf-style helper for the short failure reasons stored on each motor.
+template <typename... Args>
+std::string reason(const char* format, Args... args)
+{
+  char buffer[160];
+  std::snprintf(buffer, sizeof(buffer), format, args...);
+  return std::string(buffer);
+}
+}  // namespace
+
+std::string Motor402::getLastError()
+{
+  std::scoped_lock lock(last_error_mutex_);
+  return last_error_;
+}
+
+void Motor402::setLastError(const std::string& text)
+{
+  {
+    std::scoped_lock lock(last_error_mutex_);
+    last_error_ = text;
+  }
+  RCLCPP_DEBUG(rclcpp::get_logger("canopen_402_driver"), "%s: %s", joint_name_.c_str(), text.c_str());
+}
+
 bool Motor402::setTarget(double val)
 {
   if (state_handler_.getState() == State402::Operation_Enable)
@@ -60,7 +87,10 @@ uint16_t Motor402::getMode()
 
 bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
 {
-  uint32_t supported_modes;
+  // Must be initialized: 0x6502 & friends are not PDO mapped, so this is a real SDO read that
+  // can time out. The catch below then leaves the value untouched and we would test garbage.
+  uint32_t supported_modes = 0;
+  bool read_ok = true;
   try
   {
     if (channel == 1)
@@ -82,13 +112,22 @@ bool Motor402::isModeSupportedByDevice(uint16_t mode, uint8_t channel)
   {
     // communication was unsuccessful
     has_communication_failure_ = true;
+    read_ok = false;
   }
 
-  bool supported = supported_modes & (1 << (mode - 1));
+  if (!read_ok)
+  {
+    setLastError(reason("could not read supported drive modes, treating mode %u as unsupported", mode));
+    return false;
+  }
 
-  bool below_max = mode <= 32;
-  bool above_min = mode > 0;
-  return below_max && above_min && supported;
+  const bool supported = supported_modes & (1u << (mode - 1));
+  if (!supported)
+  {
+    setLastError(reason("device reports supported drive modes 0x%08X, mode %u not among them", supported_modes, mode));
+  }
+
+  return mode > 0 && mode <= 32 && supported;
 }
 void Motor402::registerMode(uint16_t id, const ModeSharedPtr& m, uint8_t channel)
 {
@@ -167,13 +206,13 @@ bool Motor402::switchMode(uint16_t mode)
   ModeSharedPtr next_mode = allocMode(mode);
   if (!next_mode)
   {
-    RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode is not supported.");
+    setLastError(reason("mode %u not supported by device", mode));
     return false;
   }
 
   if (!next_mode->start())
   {
-    RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Could not  start mode.");
+    setLastError(reason("could not start mode %u", mode));
     return false;
   }
 
@@ -236,7 +275,7 @@ bool Motor402::switchMode(uint16_t mode)
     }
     else
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode switch timed out.");
+      setLastError(reason("mode switch to %u timed out", mode));
       driver->universal_set_value<int8_t>(op_mode_index, 0x0, mode_id_);
       if (enable_diagnostics_.load())
       {
@@ -263,7 +302,8 @@ bool Motor402::switchState(const State402::InternalState& target)
     bool success = Command402::setTransition(control_word_, state, target_state_, &next);
     if (!success)
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Could not set transition.");
+      setLastError(reason("no transition from state %d to %d", static_cast<int>(state),
+                        static_cast<int>(target_state_.load())));
       return false;
     }
     else if (enable_diagnostics_.load() && success)
@@ -273,7 +313,7 @@ bool Motor402::switchState(const State402::InternalState& target)
     lock.unlock();
     if (state != next && !state_handler_.waitForNewState(abstime, state))
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "State Transition timed out.");
+      setLastError(reason("state transition %d -> %d timed out", static_cast<int>(state), static_cast<int>(next)));
       if (enable_diagnostics_.load())
       {
         this->diag_collector_->addf(joint_name_ + "_cia402_set_state", "State transition timed out: %d -> %d", state,
@@ -309,7 +349,7 @@ bool Motor402::readState()
     {
       if (!selected_mode_->read(sw))
       {
-        RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode handler has error.");
+        setLastError("mode handler has error");
       }
     }
     if (new_mode != mode_id_)
@@ -319,7 +359,8 @@ bool Motor402::readState()
     }
     if (selected_mode_ && selected_mode_->mode_id_ != new_mode)
     {
-      RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Mode does not match.");
+      setLastError(reason("mode mismatch: handler is %u, device reports %u",
+                          static_cast<unsigned>(selected_mode_->mode_id_), static_cast<unsigned>(new_mode)));
     }
 
     // communication worked well
@@ -366,7 +407,7 @@ void Motor402::handleWrite()
   }
   if (start_fault_reset_.exchange(false))
   {
-    RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Fault reset");
+    RCLCPP_DEBUG(rclcpp::get_logger("canopen_402_driver"), "%s: fault reset", joint_name_.c_str());
     this->driver->universal_set_value<uint16_t>(control_word_entry_index, 0x0,
                                                 control_word_ & ~(1 << Command402::CW_Fault_Reset));
   }
@@ -384,27 +425,26 @@ void Motor402::handleDiag()
   uint16_t mode = getMode();
   this->diag_collector_->addf(joint_name_ + "_cia402_mode", "%i", mode);
 
+  // Observes only. Clearing initialized_ here let the 1 Hz diagnostics tick drive the control
+  // logic and re-init already-enabled drives. initialized_ is owned by handleInit(); live
+  // health is isFaulty().
   switch (state)
   {
     case State402::Not_Ready_To_Switch_On:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Not ready to switch on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Not ready to switch on");
-      initialized_ = false;
       break;
     case State402::Switch_On_Disabled:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switch on disabled");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Switch on disabled");
-      initialized_ = false;
       break;
     case State402::Ready_To_Switch_On:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Ready to switch on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Ready to switch on");
-      initialized_ = false;
       break;
     case State402::Switched_On:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Switched on");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Switched on");
-      initialized_ = false;
       break;
     case State402::Operation_Enable:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Operation enabled");
@@ -425,7 +465,6 @@ void Motor402::handleDiag()
     case State402::Unknown:
       this->diag_collector_->addf(joint_name_ + "_cia402_state", "Unknown state");
       this->diag_collector_->summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Unknown state");
-      initialized_ = false;
       break;
   }
 
@@ -526,21 +565,27 @@ bool Motor402::handleInit()
     return false;
   }
 
-  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Read State");
+  RCLCPP_DEBUG(rclcpp::get_logger("canopen_402_driver"), "%s: init - read state", joint_name_.c_str());
   if (!readState())
   {
-    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not read motor state");
+    setLastError("init: could not read status word");
     return false;
   }
   {
     std::scoped_lock lock(cw_mutex_);
-    control_word_ = 0;
+    // switchState() below returns immediately when already in the target state, so clearing
+    // the control word here would leave it at 0. handleWrite() then sends 0x0100 - Halt with
+    // Enable Voltage cleared, i.e. "Disable voltage" - dropping the drive straight back out.
+    if (state_handler_.getState() != State402::Operation_Enable)
+    {
+      control_word_ = 0;
+    }
     start_fault_reset_ = true;
   }
-  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Enable");
+  RCLCPP_DEBUG(rclcpp::get_logger("canopen_402_driver"), "%s: init - enable", joint_name_.c_str());
   if (!switchState(State402::Operation_Enable))
   {
-    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enable motor");
+    setLastError("init: could not reach Operation_Enable");
     return false;
   }
 
@@ -571,10 +616,10 @@ bool Motor402::handleInit()
   //   std::cout << "Homing failed" << std::endl;
   //   return false;
   // }
-  RCLCPP_INFO(rclcpp::get_logger("canopen_402_driver"), "Init: Switch no mode");
+  RCLCPP_DEBUG(rclcpp::get_logger("canopen_402_driver"), "%s: init - switch to no mode", joint_name_.c_str());
   if (!switchMode(MotorBase::No_Mode))
   {
-    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enter no mode");
+    setLastError("init: could not enter No_Mode");
     return false;
   }
 
@@ -604,7 +649,7 @@ bool Motor402::handleHalt()
     target_state_ = State402::Quick_Stop_Active;
     if (!Command402::setTransition(control_word_, state, State402::Quick_Stop_Active, 0))
     {
-      RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not quick stop");
+      RCLCPP_WARN(rclcpp::get_logger("canopen_402_driver"), "%s: could not quick stop", joint_name_.c_str());
       return false;
     }
   }
@@ -617,13 +662,13 @@ bool Motor402::handleRecover()
     std::scoped_lock lock(mode_mutex_);
     if (selected_mode_ && !selected_mode_->start())
     {
-      RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not restart mode.");
+      setLastError("recover: could not restart mode");
       return false;
     }
   }
   if (!switchState(State402::Operation_Enable))
   {
-    RCLCPP_ERROR(rclcpp::get_logger("canopen_402_driver"), "Could not enable motor");
+    setLastError("recover: could not reach Operation_Enable");
     return false;
   }
   return true;

@@ -45,6 +45,12 @@ Cia402System::Cia402System() : CanopenSystem()
 {
 }
 
+Cia402System::~Cia402System()
+{
+  // Before ~CanopenSystem() destroys the device container the manager thread uses.
+  motor_manager_.stop();
+}
+
 hardware_interface::CallbackReturn Cia402System::on_init(const hardware_interface::HardwareInfo& info)
 {
   if (CanopenSystem::on_init(info) != CallbackReturn::SUCCESS)
@@ -218,43 +224,16 @@ std::vector<hardware_interface::CommandInterface> Cia402System::export_command_i
 
 hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecycle::State& previous_state)
 {
-  auto drivers = device_container_->get_registered_drivers();
+  // Nothing here touches the bus, so activation returns immediately even with the e-stop
+  // engaged. Init, fault recovery and PDO repair all happen on the manager thread.
+  motor_manager_.configure(device_container_->get_registered_drivers());
 
-  // Motor init - single attempt, write loop handles failures with NMT reset escalation
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (const auto& joint_name : motor_manager_.joint_names())
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
-
-      RCLCPP_INFO(kLogger, "Init motor %d channel %d joint: %s",
-                  it->first, (int)motor_channel, joint_name.c_str());
-
-      if (motion_controller_driver->init_motor(motor_channel))
-      {
-        RCLCPP_INFO(kLogger, "Set operation mode for motor %d channel %d joint: %s",
-                    it->first, (int)motor_channel, joint_name.c_str());
-
-        if (!motion_controller_driver->set_default_operation_mode(motor_channel))
-        {
-          RCLCPP_WARN(kLogger, "Failed to set operation mode for %s - will retry in write loop",
-                      joint_name.c_str());
-        }
-      }
-      else
-      {
-        RCLCPP_WARN(kLogger, "Failed to init motor %s - will retry in write loop",
-                    joint_name.c_str());
-      }
-
-      // Initialize offset to 0 for all joints
-      position_offsets_[joint_name] = 0.0;
-    }
+    position_offsets_[joint_name] = 0.0;
   }
 
-  // Offsets will be initialized on first read() when positions are valid
+  // Offsets are initialized from read(), once the drives are powered and operational.
   offsets_initialized_ = false;
 
   // Create service node and reset home service
@@ -310,41 +289,16 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
   last_offset_save_time_ = rclcpp::Clock().now();
 
-  // Verify and repair PDO configuration for all nodes after init
-  constexpr int kMaxPdoRepairRetries = 3;
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    int result = 0;
-    for (int attempt = 1; attempt <= kMaxPdoRepairRetries; ++attempt)
-    {
-      result = repairPdoConfig(driver, it->first);
-      if (result >= 0)
-      {
-        if (result > 0)
-        {
-          RCLCPP_INFO(kLogger, "Node %d: repaired %d PDO(s) during activation", it->first, result);
-        }
-        node_recovery_state_[it->first].pdo_check_needed = false;  // Don't re-check in write loop
-        break;
-      }
-      RCLCPP_WARN(kLogger, "Node %d: PDO repair failed (%d), retry %d/%d",
-                  it->first, -result, attempt, kMaxPdoRepairRetries);
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    if (result < 0)
-    {
-      RCLCPP_ERROR(kLogger, "Node %d: PDO repair failed after %d attempts, will retry in write loop",
-                   it->first, kMaxPdoRepairRetries);
-      // Leave pdo_check_needed = true (default) so write loop retries
-    }
-  }
+  motor_manager_.start();
 
   return CanopenSystem::on_activate(previous_state);
 }
 
 hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_lifecycle::State& previous_state)
 {
+  // Stop the manager first, or it would fight the halt below by re-enabling motors.
+  motor_manager_.stop();
+
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -407,7 +361,10 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
   }
 
   // Initialize offsets on first successful read of all enabled joints
-  if (!offsets_initialized_ && !any_enabled_joint_has_com_failure && !offset_enabled_joints_.empty())
+  // Only once the drives are powered. With the e-stop engaged CANopen answers happily while
+  // the drives are dead, and offsets captured then get persisted and reused on the next boot.
+  if (!offsets_initialized_ && motor_manager_.is_operational() && !any_enabled_joint_has_com_failure &&
+      !offset_enabled_joints_.empty())
   {
     initializePositionOffsets();
     offsets_initialized_ = true;
@@ -431,8 +388,8 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
 
 void Cia402System::stop_all_motors()
 {
-  RCLCPP_INFO(kLogger, "Stopping all motors ...");
-
+  // Called every cycle while the drives are down, so it stays quiet; write() logs the
+  // transition once.
   auto drivers = device_container_->get_registered_drivers();
   for (auto it = drivers.begin(); it != drivers.end(); ++it)
   {
@@ -444,242 +401,24 @@ void Cia402System::stop_all_motors()
   }
 }
 
-bool Cia402System::has_motor_communication_failure()
-{
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      if (motion_controller_driver->has_motor_communication_failure(motor_channel))
-      {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-bool Cia402System::is_motor_faulty()
-{
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      if (motion_controller_driver->is_motor_faulty(motor_channel))
-      {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-bool Cia402System::is_motor_uninitialized()
-{
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
-  {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-    for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-    {
-      // Check if motor is not initialized OR if mode switch failed (mode == 0)
-      if (!motion_controller_driver->is_motor_initialized(motor_channel) ||
-          motion_controller_driver->get_mode(motor_channel) == 0)
-      {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
   auto drivers = device_container_->get_registered_drivers();
 
-  // at least one motor cant be reached
-  if (has_motor_communication_failure())
+  // The manager thread owns init, fault recovery, mode switching and PDO repair. The only
+  // decision left here is whether the drives may be commanded at all - which keeps write()
+  // free of blocking CAN round trips.
+  const bool operational = motor_manager_.is_operational();
+  if (operational != drives_operational_)
   {
-    // stop all motors
-    // we cant do anything else right now other than waiting for the motor to be available again
-    stop_all_motors();
-
-    return hardware_interface::return_type::OK;
+    RCLCPP_INFO(kLogger, "%s", operational ? "All motors operational, accepting commands" :
+                                            "Motors not operational, stopping all motors");
+    drives_operational_ = operational;
   }
 
-  // at least one motor is faulty
-  if (is_motor_faulty())
+  if (!operational)
   {
-    // stop all motors
     stop_all_motors();
-
-    // recover motor from fault
-    for (auto it = drivers.begin(); it != drivers.end(); ++it)
-    {
-      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        if (motion_controller_driver->is_motor_faulty(motor_channel))
-        {
-          RCLCPP_INFO_STREAM(kLogger, "Recover motor from fault: "
-                                          << it->first << " channel " << (int)motor_channel << " joint_name: "
-                                          << motion_controller_driver->get_motor_joint_name(motor_channel));
-          if (!motion_controller_driver->recover_motor(motor_channel))
-          {
-            RCLCPP_WARN_STREAM(kLogger, "Fault reset timed out for "
-                                            << motion_controller_driver->get_motor_joint_name(motor_channel));
-          }
-        }
-      }
-    }
-
-    return hardware_interface::return_type::OK;
-  }
-
-  // at least one motor is uninitialized
-  if (is_motor_uninitialized())
-  {
-    // stop all motors
-    stop_all_motors();
-
-    auto now = std::chrono::steady_clock::now();
-
-    // initialize all uninitialized motors with NMT reset escalation for persistent failures
-    for (auto it = drivers.begin(); it != drivers.end(); ++it)
-    {
-      uint8_t node_id = it->first;
-      auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-
-      // Check if any motor on this node needs init
-      bool node_has_uninit_motor = false;
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        if (!motion_controller_driver->is_motor_initialized(motor_channel) ||
-            motion_controller_driver->get_mode(motor_channel) == 0)
-        {
-          node_has_uninit_motor = true;
-          break;
-        }
-      }
-
-      if (!node_has_uninit_motor)
-      {
-        // This node is fine, reset its failure counter
-        node_recovery_state_[node_id].consecutive_init_failures = 0;
-        continue;
-      }
-
-      // Check if we should escalate to NMT reset for this node
-      auto& recovery = node_recovery_state_[node_id];
-
-      // Post-reset cooldown: wait before attempting init after NMT reset
-      constexpr int post_reset_cooldown_ms = 2000;
-      auto ms_since_reset = std::chrono::duration_cast<std::chrono::milliseconds>(
-          now - recovery.last_nmt_reset_time).count();
-      if (recovery.total_nmt_resets > 0 && ms_since_reset < post_reset_cooldown_ms)
-      {
-        // Still cooling down after NMT reset, skip this cycle
-        continue;
-      }
-
-      bool should_nmt_reset = false;
-
-      if (recovery.consecutive_init_failures >= kNmtResetFailureThreshold &&
-          recovery.total_nmt_resets < kMaxNmtResetsPerSession)
-      {
-        auto seconds_since_reset = std::chrono::duration_cast<std::chrono::seconds>(
-            now - recovery.last_nmt_reset_time).count();
-
-        if (seconds_since_reset >= kNmtResetCooldownSeconds)
-        {
-          should_nmt_reset = true;
-        }
-      }
-
-      if (should_nmt_reset)
-      {
-        RCLCPP_WARN(kLogger, "Node %d: %d consecutive init failures, escalating to NMT reset (%d/%d resets used)",
-                    node_id, recovery.consecutive_init_failures,
-                    recovery.total_nmt_resets + 1, kMaxNmtResetsPerSession);
-
-        motion_controller_driver->reset_node_nmt_command();
-        recovery.last_nmt_reset_time = now;
-        recovery.total_nmt_resets++;
-        recovery.consecutive_init_failures = 0;
-        recovery.pdo_check_needed = true;  // Re-check PDO config after node reboot
-
-        // Skip init attempt this cycle - let node reset complete, try init next cycle
-        continue;
-      }
-
-      // Verify PDO configuration only after NMT reset or boot (not every init attempt)
-      if (recovery.pdo_check_needed)
-      {
-        int pdo_result = repairPdoConfig(motion_controller_driver, node_id);
-        if (pdo_result < 0)
-        {
-          // PDO repair failed, skip motor init this cycle and retry next cycle
-          RCLCPP_WARN(kLogger, "Node %d: PDO repair failed (%d), will retry", node_id, -pdo_result);
-          recovery.consecutive_init_failures++;
-          continue;
-        }
-        if (pdo_result > 0)
-        {
-          RCLCPP_INFO(kLogger, "Node %d: repaired %d PDO(s) before motor init", node_id, pdo_result);
-        }
-        recovery.pdo_check_needed = false;
-      }
-
-      // Attempt normal motor init for this node
-      bool any_init_failed = false;
-      for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
-      {
-        std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
-
-        if (!motion_controller_driver->is_motor_initialized(motor_channel))
-        {
-          RCLCPP_INFO(kLogger, "Init motor %d channel %d joint: %s (node failures: %d)",
-                      node_id, (int)motor_channel, joint_name.c_str(),
-                      recovery.consecutive_init_failures);
-
-          if (!motion_controller_driver->init_motor(motor_channel))
-          {
-            any_init_failed = true;
-            continue;
-          }
-
-          if (!motion_controller_driver->set_default_operation_mode(motor_channel))
-          {
-            any_init_failed = true;
-          }
-        }
-        // Recovery for motors that are initialized but mode switch failed (mode == 0)
-        else if (motion_controller_driver->get_mode(motor_channel) == 0)
-        {
-          RCLCPP_WARN(kLogger, "Motor %s initialized but mode is 0, retrying mode switch",
-                      joint_name.c_str());
-          if (!motion_controller_driver->set_default_operation_mode(motor_channel))
-          {
-            any_init_failed = true;
-          }
-        }
-      }
-
-      if (any_init_failed)
-      {
-        recovery.consecutive_init_failures++;
-      }
-      else
-      {
-        recovery.consecutive_init_failures = 0;
-      }
-    }
-
-    // dont do anything else
     return hardware_interface::return_type::OK;
   }
 
@@ -692,7 +431,8 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     if (canopen_data_[it->first].nmt_state.reset_command())
     {
       motion_controller_driver->reset_node_nmt_command();
-      node_recovery_state_[it->first].pdo_check_needed = true;  // Re-check PDO after reset
+      // The node loses its object dictionary on reboot, so PDOs and init must be redone.
+      motor_manager_.notify_external_reset();
     }
 
     // start nmt
@@ -853,106 +593,6 @@ void Cia402System::initializePositionOffsets()
       }
     }
   }
-}
-
-int Cia402System::repairPdoConfig(const std::shared_ptr<ros2_canopen::Cia402Driver>& driver, uint16_t node_id)
-{
-  int repaired = 0;
-  int failed = 0;
-
-  // Standard CiA301 COB-ID bases for "auto" configuration
-  // RPDO: 0x200, 0x300, 0x400, 0x500 + node_id
-  // TPDO: 0x180, 0x280, 0x380, 0x480 + node_id
-  static constexpr uint16_t kRpdoBases[4] = { 0x200, 0x300, 0x400, 0x500 };
-  static constexpr uint16_t kTpdoBases[4] = { 0x180, 0x280, 0x380, 0x480 };
-  static constexpr uint8_t kNumPdos = 4;
-
-  // Check and repair RPDO COB-IDs (0x1400-0x1403, sub-index 1)
-  for (uint8_t n = 0; n < kNumPdos; ++n)
-  {
-    const uint16_t index = static_cast<uint16_t>(0x1400 + n);
-    const uint32_t expected_cobid = kRpdoBases[n] + node_id;
-
-    ros2_canopen::COData data;
-    data.index_ = index;
-    data.subindex_ = 1;
-    data.data_ = 0;
-
-    if (!driver->sdo_read(data))
-    {
-      continue;  // RPDO not implemented or SDO failed
-    }
-
-    const uint32_t current_cobid = data.data_;
-    // Check if disabled (bit 31 set) or COB-ID mismatch
-    if ((current_cobid & 0x80000000u) != 0 || (current_cobid & 0x7FFu) != expected_cobid)
-    {
-      ros2_canopen::COData fix;
-      fix.index_ = index;
-      fix.subindex_ = 1;
-      fix.data_ = expected_cobid;  // Write expected COB-ID with bit 31 clear
-
-      if (driver->sdo_write(fix))
-      {
-        repaired++;
-        RCLCPP_WARN(kLogger, "Node %u RPDO%u: fixed COB-ID 0x%08X -> 0x%08X",
-                    node_id, static_cast<unsigned>(n + 1), current_cobid, expected_cobid);
-      }
-      else
-      {
-        failed++;
-        RCLCPP_ERROR(kLogger, "Node %u RPDO%u: failed to fix COB-ID 0x%08X",
-                     node_id, static_cast<unsigned>(n + 1), current_cobid);
-      }
-    }
-  }
-
-  // Check and repair TPDO COB-IDs (0x1800-0x1803, sub-index 1)
-  for (uint8_t n = 0; n < kNumPdos; ++n)
-  {
-    const uint16_t index = static_cast<uint16_t>(0x1800 + n);
-    const uint32_t expected_cobid = kTpdoBases[n] + node_id;
-
-    ros2_canopen::COData data;
-    data.index_ = index;
-    data.subindex_ = 1;
-    data.data_ = 0;
-
-    if (!driver->sdo_read(data))
-    {
-      continue;  // TPDO not implemented or SDO failed
-    }
-
-    const uint32_t current_cobid = data.data_;
-    // Check if disabled (bit 31 set) or COB-ID mismatch
-    if ((current_cobid & 0x80000000u) != 0 || (current_cobid & 0x7FFu) != expected_cobid)
-    {
-      ros2_canopen::COData fix;
-      fix.index_ = index;
-      fix.subindex_ = 1;
-      fix.data_ = expected_cobid;  // Write expected COB-ID with bit 31 clear
-
-      if (driver->sdo_write(fix))
-      {
-        repaired++;
-        RCLCPP_WARN(kLogger, "Node %u TPDO%u: fixed COB-ID 0x%08X -> 0x%08X",
-                    node_id, static_cast<unsigned>(n + 1), current_cobid, expected_cobid);
-      }
-      else
-      {
-        failed++;
-        RCLCPP_ERROR(kLogger, "Node %u TPDO%u: failed to fix COB-ID 0x%08X",
-                     node_id, static_cast<unsigned>(n + 1), current_cobid);
-      }
-    }
-  }
-
-  // Return negative if any repair failed (caller should retry)
-  if (failed > 0)
-  {
-    return -failed;
-  }
-  return repaired;
 }
 
 }  // namespace canopen_ros2_control

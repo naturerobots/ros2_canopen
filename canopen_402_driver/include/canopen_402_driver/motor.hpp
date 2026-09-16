@@ -87,7 +87,8 @@ class Motor402 : public MotorBase
 public:
   Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
            std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
-           double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel)
+           double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel,
+           uint32_t state_switch_timeout_ms = 1000)
     : MotorBase()
     , joint_name_(joint_name)
     , scale_pos_to_dev_(scale_pos_to_dev)
@@ -98,7 +99,7 @@ public:
     , channel_(channel)
     , switching_state_(switching_state)
     , monitor_mode_(true)
-    , state_switch_timeout_(1)
+    , state_switch_timeout_(state_switch_timeout_ms)
     , initialized_(false)
     , has_communication_failure_(false)
   {
@@ -220,6 +221,12 @@ public:
    *
    */
   bool isInitialized();
+
+  /// Short reason for the most recent failure, empty if there has not been one.
+  std::string getLastError();
+
+  /// Records a failure reason and mirrors it to the debug log.
+  void setLastError(const std::string& reason);
 
   /**
    * @brief Returns if the motor is initialized
@@ -415,7 +422,14 @@ private:
   std::mutex mode_mutex_;
   const State402::InternalState switching_state_;
   const bool monitor_mode_;
-  const std::chrono::seconds state_switch_timeout_;
+  // Upper bound for one CiA402 state transition. Pure dead time on every attempt that cannot
+  // succeed (e-stop engaged, drive unpowered), so it is configurable.
+  const std::chrono::milliseconds state_switch_timeout_;
+
+  // Reason for the most recent failure, so a recurring problem stays diagnosable from the
+  // default log without turning on debug output for the whole driver.
+  std::mutex last_error_mutex_;
+  std::string last_error_;
 
   //  !need to patch, that second channel is supported
   std::shared_ptr<LelyDriverBridge> driver;

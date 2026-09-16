@@ -224,6 +224,18 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     return;
   }
 
+  // Upper bound for one CiA402 state transition, shared by every channel of this node.
+  uint32_t state_switch_timeout_ms = 1000;
+  try
+  {
+    YAML::Node timeout_conf = this->config_["state_switch_timeout_ms"];
+    state_switch_timeout_ms = timeout_conf.as<uint32_t>();
+  }
+  catch (...)
+  {
+  }
+  RCLCPP_INFO(this->node_->get_logger(), "State switch timeout: %u ms", state_switch_timeout_ms);
+
   // iterate over channels
   for (auto it = channels_conf.begin(); it != channels_conf.end(); it++)
   {
@@ -304,7 +316,8 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
                                        (int)ros2_canopen::State402::InternalState::Operation_Enable),
                                    joint_name.value(), scale_pos_to_dev.value_or(1000.0),
                                    scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
-                                   scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel);
+                                   scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel,
+                                   state_switch_timeout_ms);
     motor_channels_.push_back(channel);
 
     // create publishers and subscribers

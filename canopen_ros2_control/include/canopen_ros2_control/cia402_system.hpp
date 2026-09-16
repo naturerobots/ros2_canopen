@@ -28,6 +28,7 @@
 
 #include "canopen_402_driver/cia402_driver.hpp"
 #include "canopen_ros2_control/canopen_system.hpp"
+#include "canopen_ros2_control/motor_manager.hpp"
 #include <std_srvs/srv/trigger.hpp>
 #include "canopen_ros2_control/srv/adjust_position_offset.hpp"
 #include <set>
@@ -50,15 +51,6 @@ struct MotorNodeData
   double target_torque;
 };
 
-// Tracks NMT reset recovery state per CANopen node (not per motor)
-struct NodeRecoveryState
-{
-  int consecutive_init_failures = 0;
-  std::chrono::steady_clock::time_point last_nmt_reset_time;
-  int total_nmt_resets = 0;
-  bool pdo_check_needed = true;  // Set after NMT reset or boot, cleared after successful PDO check
-};
-
 using namespace ros2_canopen;
 class Cia402System : public CanopenSystem
 {
@@ -66,7 +58,7 @@ public:
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
   Cia402System();
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
-  ~Cia402System() = default;
+  ~Cia402System();
   CANOPEN_ROS2_CONTROL__VISIBILITY_PUBLIC
   hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo& info);
 
@@ -110,34 +102,17 @@ protected:
   void savePositionOffsets();
   bool loadPositionOffsets(std::map<std::string, double>& saved_raw, std::map<std::string, double>& saved_offsets);
 
+  /// Commands every motor to zero velocity, whenever the drives are not all operational.
   void stop_all_motors();
 
-  bool has_motor_communication_failure();
+  /// Owns init, fault recovery, mode switching, PDO repair and NMT resets on its own thread.
+  /// write() only reads its is_operational() flag.
+  MotorManager motor_manager_;
 
-  bool is_motor_faulty();
-
-  bool is_motor_uninitialized();
-
-  // NMT reset recovery tracking per node
-  std::map<uint8_t, NodeRecoveryState> node_recovery_state_;
-  // ponytail: hardcoded thresholds, make configurable if needed
-  static constexpr int kNmtResetFailureThreshold = 10;   // failures before NMT reset
-  static constexpr int kNmtResetCooldownSeconds = 5;     // seconds between resets
-  static constexpr int kMaxNmtResetsPerSession = 5;      // prevent infinite loop
-
-  // Verifies and repairs PDO configuration for a node. Called during init and after NMT reset.
-  // Returns number of PDOs that were repaired.
-  int repairPdoConfig(const std::shared_ptr<ros2_canopen::Cia402Driver>& driver, uint16_t node_id);
+  /// Last is_operational() seen by write(), so the transition is logged once.
+  bool drives_operational_ = false;
 
 private:
-  void switchModes(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
-
-  void handleInit(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
-
-  void handleRecover(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
-
-  void handleHalt(uint id, const std::shared_ptr<ros2_canopen::Cia402Driver>& driver);
-
   void initDeviceContainer();
 };
 

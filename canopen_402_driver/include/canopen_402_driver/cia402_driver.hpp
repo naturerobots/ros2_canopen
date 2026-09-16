@@ -115,6 +115,11 @@ public:
     return node_canopen_402_driver_->has_motor_communication_failure(channel);
   }
 
+  std::string get_motor_last_error(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_motor_last_error(channel);
+  }
+
   bool is_motor_halted(uint8_t channel)
   {
     return node_canopen_402_driver_->is_motor_halted(channel);

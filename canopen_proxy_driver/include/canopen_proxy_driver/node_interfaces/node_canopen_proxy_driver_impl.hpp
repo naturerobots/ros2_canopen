@@ -324,7 +324,7 @@ bool NodeCanopenProxyDriver<NODETYPE>::sdo_read(ros2_canopen::COData & data)
 {
   if (this->activated_.load())
   {
-    RCLCPP_INFO(
+    RCLCPP_DEBUG(
       this->node_->get_logger(), "Slave 0x%X: SDO Read Call index=0x%X subindex=%hhu",
       this->lely_driver_->get_id(), data.index_, data.subindex_);
 
@@ -364,7 +364,7 @@ bool NodeCanopenProxyDriver<NODETYPE>::sdo_write(ros2_canopen::COData & data)
 {
   if (this->activated_.load())
   {
-    RCLCPP_INFO(
+    RCLCPP_DEBUG(
       this->node_->get_logger(), "Slave 0x%X: SDO Write Call index=0x%X subindex=%hhu data=%u",
       this->lely_driver_->get_id(), data.index_, data.subindex_, data.data_);
 

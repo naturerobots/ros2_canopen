@@ -90,6 +90,11 @@ public:
     return motors_[channel]->hasCommunicationFailure();
   }
 
+  virtual std::string get_motor_last_error(uint8_t channel)
+  {
+    return motors_[channel]->getLastError();
+  }
+
   virtual bool is_motor_halted(uint8_t channel)
   {
     return motors_[channel]->isHalted();

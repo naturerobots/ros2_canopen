@@ -196,8 +196,11 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
   std::future<std::shared_ptr<ros2_canopen::LelyDriverBridge>> f = prom->get_future();
   this->exec_->post([this, prom]() {
     std::scoped_lock<std::mutex> lock(this->driver_mutex_);
-    // Skip if previous attempt already created a valid driver
-    if (this->lely_driver_ && this->lely_driver_->IsReady())
+    // Reuse the driver a previous attempt already created. Constructing a second
+    // LelyDriverBridge for a node id that is still registered with the master throws
+    // inside the event loop, so never do it -- if it exists but is not ready yet, the
+    // caller below boots it instead.
+    if (this->lely_driver_)
     {
       prom->set_value(lely_driver_);
       return;
@@ -208,10 +211,15 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
     prom->set_value(lely_driver_);
   });
 
-  auto future_status = f.wait_for(this->non_transmit_timeout_);
+  auto future_status = f.wait_for(this->boot_timeout_);
   if (future_status != std::future_status::ready)
   {
-    RCLCPP_ERROR(this->node_->get_logger(), "Adding timed out.");
+    RCLCPP_ERROR(
+        this->node_->get_logger(),
+        "Adding to master timed out after %ld ms (node id %u). The CANopen event loop did not run "
+        "the driver construction task in time; raise boot_timeout_ms in bus.yml if this happens "
+        "under heavy load.",
+        (long)this->boot_timeout_.count(), (unsigned)this->node_id_);
     throw DriverException("add_to_master: adding timed out");
   }
   this->lely_driver_ = f.get();
@@ -249,7 +257,7 @@ void NodeCanopenBaseDriver<NODETYPE>::remove_from_master()
     prom->set_value();
   });
 
-  auto future_status = f.wait_for(this->non_transmit_timeout_);
+  auto future_status = f.wait_for(this->boot_timeout_);
   if (future_status != std::future_status::ready)
   {
     throw DriverException("remove_from_master: removing timed out");

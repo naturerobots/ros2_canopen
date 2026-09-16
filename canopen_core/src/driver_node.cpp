@@ -14,33 +14,54 @@
 
 #include "canopen_core/driver_node.hpp"
 
+#include <chrono>
+#include <thread>
+
 using namespace ros2_canopen;
 void CanopenDriver::init()
 {
-  node_canopen_driver_->init();
-  node_canopen_driver_->configure();
-  bool success = false;
-  for (int i = 0; i < 5; i++)
+  // Each phase is skipped if it already succeeded, so that a caller retrying init() after a
+  // failure resumes at the phase that actually failed instead of tripping over the
+  // "already initialised/configured" guards.
+  if (!node_canopen_driver_->is_initialised())
   {
-    try
+    node_canopen_driver_->init();
+  }
+  if (!node_canopen_driver_->is_configured())
+  {
+    node_canopen_driver_->configure();
+  }
+  if (!node_canopen_driver_->is_master_set())
+  {
+    bool success = false;
+    for (int i = 0; i < 5; i++)
     {
-      node_canopen_driver_->demand_set_master();
-      success = true;
-      break;
+      try
+      {
+        node_canopen_driver_->demand_set_master();
+        success = true;
+        break;
+      }
+      catch (std::exception & e)
+      {
+        RCLCPP_WARN(
+          this->get_logger(), "Failed to get demand set master result because %s. Retrying.",
+          e.what());
+        // The container executor can be slow to answer while the rest of the stack is
+        // still coming up; back off rather than burning all five tries in a millisecond.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      }
     }
-    catch (std::exception & e)
+    if (!success)
     {
-      RCLCPP_WARN(
-        this->get_logger(), "Failed to get demand set master result becauss %s. Retrying.",
-        e.what());
+      RCLCPP_WARN(this->get_logger(), "Failed to get demand set master result. Exiting...");
+      throw DriverException("Failed to get demand set master result. Exiting...");
     }
   }
-  if (!success)
+  if (!node_canopen_driver_->is_activated())
   {
-    RCLCPP_WARN(this->get_logger(), "Failed to get demand set master result. Exiting...");
-    throw DriverException("Failed to get demand set master result. Exiting...");
+    node_canopen_driver_->activate();
   }
-  node_canopen_driver_->activate();
 }
 
 void CanopenDriver::shutdown() { node_canopen_driver_->shutdown(); }

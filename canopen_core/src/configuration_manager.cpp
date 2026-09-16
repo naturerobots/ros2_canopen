@@ -21,11 +21,13 @@ namespace ros2_canopen
 void ConfigurationManager::init_config()
 {
   std::string dcf_path = "";
+  YAML::Node global_options;
   for (YAML::const_iterator it = root_.begin(); it != root_.end(); it++)
   {
     std::string driver_name = it->first.as<std::string>();
     if (driver_name != "options") continue;
     YAML::Node config_node = it->second;
+    global_options = config_node;
     if (config_node["dcf_path"])
     {
       dcf_path = config_node["dcf_path"].as<std::string>();
@@ -40,6 +42,11 @@ void ConfigurationManager::init_config()
     if (!config_node["dcf_path"])
     {
       config_node["dcf_path"] = dcf_path;
+    }
+    // Propagate bus-wide defaults that a device may override individually.
+    if (global_options["boot_timeout_ms"] && !config_node["boot_timeout_ms"])
+    {
+      config_node["boot_timeout_ms"] = global_options["boot_timeout_ms"];
     }
     devices_.insert({driver_name, config_node});
   }

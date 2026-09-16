@@ -71,6 +71,10 @@ protected:
   std::shared_ptr<lely::canopen::BasicDriver> driver_;
 
   std::chrono::milliseconds non_transmit_timeout_;
+  /// Budget for adding the driver to the master. This covers loading and parsing the
+  /// EDS/DCF from disk, so it must be far more generous than non_transmit_timeout_,
+  /// which only covers in-process message passing.
+  std::chrono::milliseconds boot_timeout_;
   YAML::Node config_;
   uint8_t node_id_;
   std::string container_name_;
@@ -87,10 +91,20 @@ protected:
 
 public:
   NodeCanopenDriver(NODETYPE * node)
-  : master_set_(false), initialised_(false), configured_(false), activated_(false)
+  : non_transmit_timeout_(200),
+    boot_timeout_(10000),
+    master_set_(false),
+    initialised_(false),
+    configured_(false),
+    activated_(false)
   {
     node_ = node;
   }
+
+  bool is_master_set() const override { return master_set_.load(); }
+  bool is_initialised() const override { return initialised_.load(); }
+  bool is_configured() const override { return configured_.load(); }
+  bool is_activated() const override { return activated_.load(); }
 
   /**
    * @brief Set Master
@@ -141,6 +155,7 @@ public:
     node_->declare_parameter("container_name", "");
     node_->declare_parameter("node_id", 0);
     node_->declare_parameter("non_transmit_timeout", 200);
+    node_->declare_parameter("boot_timeout", 10000);
     node_->declare_parameter("config", "");
     this->init(true);
     this->initialised_.store(true);
@@ -188,13 +203,21 @@ public:
       throw DriverException("Configure: driver is already activated");
     }
     int non_transmit_timeout;
+    int boot_timeout;
     std::string config;
     node_->get_parameter("container_name", container_name_);
     node_->get_parameter("non_transmit_timeout", non_transmit_timeout);
+    node_->get_parameter("boot_timeout", boot_timeout);
     node_->get_parameter("node_id", this->node_id_);
     node_->get_parameter("config", config);
     this->config_ = YAML::Load(config);
     this->non_transmit_timeout_ = std::chrono::milliseconds(non_transmit_timeout);
+    // Per-device override from bus.yml, same pattern as state_switch_timeout_ms.
+    if (this->config_["boot_timeout_ms"])
+    {
+      boot_timeout = this->config_["boot_timeout_ms"].as<int>();
+    }
+    this->boot_timeout_ = std::chrono::milliseconds(boot_timeout);
     auto path = this->config_["dcf_path"].as<std::string>();
     auto dcf = this->config_["dcf"].as<std::string>();
     auto name = this->node_->get_name();

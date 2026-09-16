@@ -28,6 +28,10 @@ public:
     (std::shared_ptr<lely::ev::Executor> exec, std::shared_ptr<lely::canopen::AsyncMaster> master),
     (override));
   MOCK_METHOD(void, demand_set_master, (), (override));
+  MOCK_METHOD(bool, is_master_set, (), (const, override));
+  MOCK_METHOD(bool, is_initialised, (), (const, override));
+  MOCK_METHOD(bool, is_configured, (), (const, override));
+  MOCK_METHOD(bool, is_activated, (), (const, override));
   MOCK_METHOD(void, init, (), (override));
   MOCK_METHOD(void, configure, (), (override));
   MOCK_METHOD(void, activate, (), (override));

@@ -33,6 +33,17 @@ class NodeCanopenDriverInterface
 {
 public:
   NodeCanopenDriverInterface() {}
+
+  /**
+   * @brief Lifecycle state queries
+   *
+   * These let a caller that is retrying a failed init() see which phases already
+   * completed, so it can resume instead of re-running a phase that would throw.
+   */
+  virtual bool is_master_set() const = 0;
+  virtual bool is_initialised() const = 0;
+  virtual bool is_configured() const = 0;
+  virtual bool is_activated() const = 0;
   /**
    * @brief Set Master
    *

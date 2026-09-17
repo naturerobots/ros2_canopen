@@ -130,9 +130,24 @@ public:
     return motors_[channel]->isHomingEnabled();
   }
 
-  virtual double get_homing_speed(uint8_t channel)
+  virtual double get_homing_fast_speed(uint8_t channel)
   {
-    return motors_[channel]->getHomingSpeed();
+    return motors_[channel]->getHomingFastSpeed();
+  }
+
+  virtual double get_homing_slow_speed(uint8_t channel)
+  {
+    return motors_[channel]->getHomingSlowSpeed();
+  }
+
+  virtual double get_homing_backoff_speed(uint8_t channel)
+  {
+    return motors_[channel]->getHomingBackoffSpeed();
+  }
+
+  virtual double get_homing_backoff_time(uint8_t channel)
+  {
+    return motors_[channel]->getHomingBackoffTime();
   }
 
   virtual double get_home_offset(uint8_t channel)

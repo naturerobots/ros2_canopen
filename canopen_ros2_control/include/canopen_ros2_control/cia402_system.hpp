@@ -131,12 +131,10 @@ protected:
   /// Last is_operational() seen by write(), so the transition is logged once.
   bool drives_operational_ = false;
 
-  // --- Homing: drives a joint at its configured homing_speed (through the normal setTarget()/
-  // PDO pathway, no mode switch - see Motor402::isHomingEnabled() and friends for the bus.yaml
-  // config this reads) until a configurable digital object reads its configured "triggered"
-  // value, then captures the resulting position_offsets_ entry so ros2_control sees home_offset
-  // at that physical position. Runs entirely here, not in canopen_402_driver/MotorManager - see
-  // the "not touching the recovery technique" instruction this was built to satisfy.
+  // --- Homing: two-stage homing procedure (backoff, fast approach, backoff, slow approach)
+  // using configured speeds via the normal setTarget()/PDO pathway. Captures position_offsets_
+  // when home switch triggers so ros2_control sees home_offset at that physical position.
+  // Runs entirely here, not in canopen_402_driver/MotorManager.
   // Multiple joints can home concurrently via separate service calls.
   std::atomic<int> homing_active_count_{ 0 };  // number of joints currently homing (for shutdown wait)
   std::mutex homing_mutex_;

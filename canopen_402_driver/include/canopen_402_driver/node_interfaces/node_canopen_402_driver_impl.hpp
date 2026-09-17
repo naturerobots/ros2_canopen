@@ -311,7 +311,10 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     }
 
     std::optional<bool> homing_enabled;
-    std::optional<double> homing_speed;
+    std::optional<double> homing_fast_speed;
+    std::optional<double> homing_slow_speed;
+    std::optional<double> homing_backoff_speed;
+    std::optional<double> homing_backoff_time;
     std::optional<double> home_offset;
     std::optional<int> home_switch_index;
     std::optional<int> home_switch_subindex;
@@ -327,7 +330,28 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
     }
     try
     {
-      homing_speed = std::optional(channel_conf["homing_speed"].as<double>());
+      homing_fast_speed = std::optional(channel_conf["homing_fast_speed"].as<double>());
+    }
+    catch (...)
+    {
+    }
+    try
+    {
+      homing_slow_speed = std::optional(channel_conf["homing_slow_speed"].as<double>());
+    }
+    catch (...)
+    {
+    }
+    try
+    {
+      homing_backoff_speed = std::optional(channel_conf["homing_backoff_speed"].as<double>());
+    }
+    catch (...)
+    {
+    }
+    try
+    {
+      homing_backoff_time = std::optional(channel_conf["homing_backoff_time"].as<double>());
     }
     catch (...)
     {
@@ -383,7 +407,11 @@ void NodeCanopen402Driver<NODETYPE>::configure(bool called_from_base)
                                    scale_pos_from_dev.value_or(0.001), scale_vel_to_dev.value_or(1000.0),
                                    scale_vel_from_dev.value_or(0.001), default_operation_mode.value_or(0), channel,
                                    state_switch_timeout_ms,
-                                   homing_enabled.value_or(false), homing_speed.value_or(0.0),
+                                   homing_enabled.value_or(false),
+                                   homing_fast_speed.value_or(0.0),
+                                   homing_slow_speed.value_or(0.0),
+                                   homing_backoff_speed.value_or(0.0),
+                                   homing_backoff_time.value_or(0.5),
                                    home_offset.value_or(0.0),
                                    static_cast<uint16_t>(home_switch_index.value_or(0)),
                                    static_cast<uint8_t>(home_switch_subindex.value_or(0)),

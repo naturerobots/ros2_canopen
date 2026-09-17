@@ -160,9 +160,24 @@ public:
     return node_canopen_402_driver_->is_homing_enabled(channel);
   }
 
-  double get_homing_speed(uint8_t channel)
+  double get_homing_fast_speed(uint8_t channel)
   {
-    return node_canopen_402_driver_->get_homing_speed(channel);
+    return node_canopen_402_driver_->get_homing_fast_speed(channel);
+  }
+
+  double get_homing_slow_speed(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_homing_slow_speed(channel);
+  }
+
+  double get_homing_backoff_speed(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_homing_backoff_speed(channel);
+  }
+
+  double get_homing_backoff_time(uint8_t channel)
+  {
+    return node_canopen_402_driver_->get_homing_backoff_time(channel);
   }
 
   double get_home_offset(uint8_t channel)

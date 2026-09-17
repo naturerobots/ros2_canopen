@@ -89,7 +89,9 @@ public:
            std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
            double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel,
            uint32_t state_switch_timeout_ms = 1000,
-           bool homing_enabled = false, double homing_speed = 0.0, double home_offset = 0.0,
+           bool homing_enabled = false, double homing_fast_speed = 0.0, double homing_slow_speed = 0.0,
+           double homing_backoff_speed = 0.0, double homing_backoff_time = 0.5,
+           double home_offset = 0.0,
            uint16_t home_switch_index = 0, uint8_t home_switch_subindex = 0,
            int32_t home_switch_active_value = 1, double home_max_travel = 6.283185307179586,
            double homing_timeout = 30.0)
@@ -102,7 +104,10 @@ public:
     , default_operation_mode_(default_operation_mode)
     , channel_(channel)
     , homing_enabled_(homing_enabled)
-    , homing_speed_(homing_speed)
+    , homing_fast_speed_(homing_fast_speed)
+    , homing_slow_speed_(homing_slow_speed)
+    , homing_backoff_speed_(homing_backoff_speed)
+    , homing_backoff_time_(homing_backoff_time)
     , home_offset_(home_offset)
     , home_switch_index_(home_switch_index)
     , home_switch_subindex_(home_switch_subindex)
@@ -155,20 +160,35 @@ public:
    * @brief Homing configuration, read from bus.yaml per motor channel.
    *
    * Homing itself is NOT implemented here: the motor never changes operation mode for it, it's
-   * simply driven at homing_speed_ (via the normal setTarget()/PDO pathway, whatever mode is
+   * driven at configured speeds (via the normal setTarget()/PDO pathway, whatever mode is
    * already active) until isHomeSwitchTriggered() reports the configured digital object reads
    * home_switch_active_value_, by the homing state machine in canopen_ros2_control's Cia402System
-   * (which owns write()). These getters just expose the bus.yaml config to it. home_max_travel_
-   * is an independent safety bound on top of the switch read - see getHomeMaxTravel().
+   * (which owns write()). Homing procedure: backoff, fast approach, backoff, slow approach.
+   * These getters just expose the bus.yaml config. home_max_travel_ is an independent safety bound.
    */
   bool isHomingEnabled() const
   {
     return homing_enabled_;
   }
 
-  double getHomingSpeed() const
+  double getHomingFastSpeed() const
   {
-    return homing_speed_;
+    return homing_fast_speed_;
+  }
+
+  double getHomingSlowSpeed() const
+  {
+    return homing_slow_speed_;
+  }
+
+  double getHomingBackoffSpeed() const
+  {
+    return homing_backoff_speed_;
+  }
+
+  double getHomingBackoffTime() const
+  {
+    return homing_backoff_time_;
   }
 
   double getHomeOffset() const
@@ -207,7 +227,7 @@ public:
   /**
    * @brief Overall time bound (seconds) for one homing run - the other independent safety
    * bound alongside getHomeMaxTravel(), in case the switch is never reached within a sane time
-   * even without exceeding the travel limit (e.g. homing_speed configured too low).
+   * even without exceeding the travel limit (e.g. homing speeds configured too low).
    */
   double getHomingTimeout() const
   {
@@ -514,7 +534,10 @@ private:
 
   // homing configuration (see the getters above for what these mean)
   bool homing_enabled_ = false;
-  double homing_speed_ = 0.0;
+  double homing_fast_speed_ = 0.0;
+  double homing_slow_speed_ = 0.0;
+  double homing_backoff_speed_ = 0.0;
+  double homing_backoff_time_ = 0.5;  // seconds
   double home_offset_ = 0.0;
   uint16_t home_switch_index_ = 0;
   uint8_t home_switch_subindex_ = 0;

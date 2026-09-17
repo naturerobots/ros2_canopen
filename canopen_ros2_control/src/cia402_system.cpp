@@ -734,75 +734,109 @@ void Cia402System::initializePositionOffsets()
 Cia402System::HomingResult Cia402System::runHomingSequence(std::shared_ptr<ros2_canopen::Cia402Driver> driver,
                                                             uint8_t channel, const std::string& joint_name)
 {
-  const double speed = driver->get_homing_speed(channel);
+  const double fast_speed = driver->get_homing_fast_speed(channel);
+  const double slow_speed = driver->get_homing_slow_speed(channel);
+  const double backoff_speed = driver->get_homing_backoff_speed(channel);
+  const double backoff_time = driver->get_homing_backoff_time(channel);
   const double home_offset = driver->get_home_offset(channel);
-  const uint16_t switch_index = driver->get_home_switch_index(channel);
-  const uint8_t switch_subindex = driver->get_home_switch_subindex(channel);
-  const int32_t switch_active_value = driver->get_home_switch_active_value(channel);
   const double max_travel = driver->get_home_max_travel(channel);
   const double timeout_s = driver->get_homing_timeout(channel);
-  const double start_position = driver->get_position(channel);
 
-  RCLCPP_INFO(kLogger, "Homing %s: driving at %.4f rad/s, watching 0x%04X:%hhu for value %d, "
-                       "max travel %.4f rad, timeout %.1f s",
-              joint_name.c_str(), speed, switch_index, switch_subindex, switch_active_value, max_travel,
-              timeout_s);
+  // Backoff direction is opposite to homing direction (sign of fast_speed)
+  const double backoff_velocity = (fast_speed >= 0) ? -std::abs(backoff_speed) : std::abs(backoff_speed);
 
-  // Register this joint for homing - write() will override its target with homing speed
-  {
-    std::scoped_lock lock(homing_mutex_);
-    homing_joints_[joint_name] = speed;
-  }
+  RCLCPP_INFO(kLogger, "Homing %s: fast=%.4f slow=%.4f backoff=%.4f (%.2fs), max_travel=%.4f, timeout=%.1fs",
+              joint_name.c_str(), fast_speed, slow_speed, backoff_velocity, backoff_time, max_travel, timeout_s);
+
   ++homing_active_count_;
-
-  bool triggered = false;
-  bool aborted_for_safety = false;
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(static_cast<int64_t>(timeout_s * 1000.0));
-  while (std::chrono::steady_clock::now() < deadline)
-  {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    // is_home_switch_triggered() uses the same bounded-timeout mechanism get_position() does
-    // (see Motor402::isHomeSwitchTriggered()'s comment) - driver->sdo_read(COData) was used
-    // here originally and hung forever on this device's BOOLEAN-typed switch object, which is
-    // exactly why the travel check below exists too: the switch read must never be the only
-    // thing standing between a homing request and unbounded motion.
-    bool switch_triggered = false;
-    if (driver->is_home_switch_triggered(channel, switch_triggered) && switch_triggered)
+  auto set_velocity = [&](double vel) {
+    std::scoped_lock lock(homing_mutex_);
+    homing_joints_[joint_name] = vel;
+  };
+
+  auto check_timeout = [&]() {
+    return std::chrono::steady_clock::now() >= deadline;
+  };
+
+  auto check_travel = [&](double start_pos) {
+    return std::abs(driver->get_position(channel) - start_pos) > max_travel;
+  };
+
+  auto wait_for_switch = [&](double start_pos) -> std::pair<bool, std::string> {
+    while (!check_timeout())
     {
-      triggered = true;
-      break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      bool triggered = false;
+      if (driver->is_home_switch_triggered(channel, triggered) && triggered)
+      {
+        return { true, "" };
+      }
+      if (check_travel(start_pos))
+      {
+        return { false, "Exceeded max travel without seeing home switch" };
+      }
     }
+    return { false, "Timed out waiting for home switch" };
+  };
 
-    const double traveled = std::abs(driver->get_position(channel) - start_position);
-    if (traveled > max_travel)
-    {
-      RCLCPP_ERROR(kLogger, "Homing %s: exceeded max travel (%.4f > %.4f rad) without seeing the "
-                            "home switch - aborting for safety", joint_name.c_str(), traveled, max_travel);
-      aborted_for_safety = true;
-      break;
-    }
-  }
+  auto backoff_move = [&]() {
+    RCLCPP_INFO(kLogger, "Homing %s: backoff at %.4f rad/s for %.2fs", joint_name.c_str(), backoff_velocity, backoff_time);
+    set_velocity(backoff_velocity);
+    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(backoff_time * 1000.0)));
+  };
 
-  // Stop overriding this joint's target - remove from homing map
-  {
+  auto cleanup = [&]() {
     std::scoped_lock lock(homing_mutex_);
     homing_joints_.erase(joint_name);
-  }
-  --homing_active_count_;
+    --homing_active_count_;
+  };
 
-  if (aborted_for_safety)
+  // Phase 1: Initial backoff
+  backoff_move();
+  if (check_timeout())
   {
-    return { false, "Exceeded max travel without seeing the home switch" };
+    cleanup();
+    return { false, "Timed out during initial backoff" };
   }
 
-  if (!triggered)
+  // Phase 2: Fast approach
+  RCLCPP_INFO(kLogger, "Homing %s: fast approach at %.4f rad/s", joint_name.c_str(), fast_speed);
+  double phase_start = driver->get_position(channel);
+  set_velocity(fast_speed);
+  auto [fast_ok, fast_err] = wait_for_switch(phase_start);
+  if (!fast_ok)
   {
-    RCLCPP_ERROR(kLogger, "Homing %s: timed out waiting for the home switch", joint_name.c_str());
-    return { false, "Timed out waiting for the home switch" };
+    RCLCPP_ERROR(kLogger, "Homing %s: fast approach failed - %s", joint_name.c_str(), fast_err.c_str());
+    cleanup();
+    return { false, "Fast approach: " + fast_err };
+  }
+  RCLCPP_INFO(kLogger, "Homing %s: fast approach triggered", joint_name.c_str());
+
+  // Phase 3: Second backoff
+  backoff_move();
+  if (check_timeout())
+  {
+    cleanup();
+    return { false, "Timed out during second backoff" };
   }
 
+  // Phase 4: Slow approach
+  RCLCPP_INFO(kLogger, "Homing %s: slow approach at %.4f rad/s", joint_name.c_str(), slow_speed);
+  phase_start = driver->get_position(channel);
+  set_velocity(slow_speed);
+  auto [slow_ok, slow_err] = wait_for_switch(phase_start);
+  if (!slow_ok)
+  {
+    RCLCPP_ERROR(kLogger, "Homing %s: slow approach failed - %s", joint_name.c_str(), slow_err.c_str());
+    cleanup();
+    return { false, "Slow approach: " + slow_err };
+  }
+  RCLCPP_INFO(kLogger, "Homing %s: slow approach triggered", joint_name.c_str());
+
+  // Phase 5: Set offset
   const double raw_position = driver->get_position(channel);
   const double new_offset = home_offset - raw_position;
   {
@@ -812,12 +846,13 @@ Cia402System::HomingResult Cia402System::runHomingSequence(std::shared_ptr<ros2_
   }
   savePositionOffsets();
 
-  RCLCPP_INFO(kLogger, "Homing %s: complete - raw position %.4f, offset %.4f, now reports %.4f",
+  cleanup();
+
+  RCLCPP_INFO(kLogger, "Homing %s: complete - raw=%.4f offset=%.4f reports=%.4f",
               joint_name.c_str(), raw_position, new_offset, raw_position + new_offset);
 
   std::ostringstream msg;
-  msg << "Homing complete - raw position " << raw_position << ", offset " << new_offset
-      << ", now reports " << (raw_position + new_offset);
+  msg << "Homing complete - raw " << raw_position << ", offset " << new_offset;
   return { true, msg.str() };
 }
 

@@ -109,6 +109,7 @@ protected:
   /// blocking from touching PDO transmission.
   std::shared_ptr<rclcpp::Executor> service_executor_;
   std::unique_ptr<std::thread> service_spin_thread_;
+  rclcpp::CallbackGroup::SharedPtr reentrant_callback_group_;  // allows concurrent service calls
 
   /// Guards position_offsets_ and offset_enabled_joints_, which read()/write() (the RT thread)
   /// read every cycle while the homing thread and the offset services (running on service_node_'s

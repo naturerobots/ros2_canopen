@@ -253,6 +253,7 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
   // Create service node and reset home service
   service_node_ = std::make_shared<rclcpp::Node>("cia402_system_services");
+  reentrant_callback_group_ = service_node_->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
   reset_position_home_service_ = service_node_->create_service<std_srvs::srv::Trigger>(
     "~/reset_position_home",
     [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
@@ -355,9 +356,11 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
       response->message = result.message;
       RCLCPP_INFO(kLogger, "Homing: %s for %s - %s", result.success ? "succeeded" : "failed",
                   joint.c_str(), result.message.c_str());
-    });
+    },
+    rmw_qos_profile_services_default,
+    reentrant_callback_group_);
 
-  // MultiThreadedExecutor allows concurrent homing of multiple joints via separate service calls.
+  // MultiThreadedExecutor + ReentrantCallbackGroup allows concurrent homing of multiple joints.
   // Deliberately NOT executor_->add_node(service_node_) - see the member comment in cia402_system.hpp.
   service_executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
   service_executor_->add_node(service_node_);

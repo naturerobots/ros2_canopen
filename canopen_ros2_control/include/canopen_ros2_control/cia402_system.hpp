@@ -101,14 +101,12 @@ protected:
   rclcpp::Service<canopen_ros2_control::srv::AdjustPositionOffset>::SharedPtr adjust_position_offset_service_;
   rclcpp::Service<canopen_ros2_control::srv::HomeJoint>::SharedPtr home_joint_service_;
   std::shared_ptr<rclcpp::Node> service_node_;
-  /// service_node_'s OWN executor/thread, deliberately NOT the shared executor_ that spins
+  /// service_node_'s OWN multi-threaded executor, deliberately NOT the shared executor_ that spins
   /// device_container_ (and therefore every CANopen driver node's poll_timer_, which is what
-  /// actually transmits PDOs - see NodeCanopenBaseDriver's create_wall_timer). home_joint_service_
-  /// blocks its calling thread until homing finishes (by design, so the RPC is synchronous) -
-  /// if that callback ran on the shared executor_, blocking it would starve poll_timer_ for
-  /// EVERY node for the whole homing duration, and the homing motor's own commands would never
-  /// actually reach the bus. Isolating service_node_ here keeps that block from touching PDO
-  /// transmission at all.
+  /// actually transmits PDOs). home_joint_service_ blocks its calling thread until homing finishes
+  /// (by design, so the RPC is synchronous). Using MultiThreadedExecutor allows concurrent homing
+  /// of multiple joints via separate service calls. Isolating from the shared executor_ keeps
+  /// blocking from touching PDO transmission.
   std::shared_ptr<rclcpp::Executor> service_executor_;
   std::unique_ptr<std::thread> service_spin_thread_;
 
@@ -138,17 +136,10 @@ protected:
   // value, then captures the resulting position_offsets_ entry so ros2_control sees home_offset
   // at that physical position. Runs entirely here, not in canopen_402_driver/MotorManager - see
   // the "not touching the recovery technique" instruction this was built to satisfy.
-  std::thread homing_thread_;
-  /// Guards homing_thread_ ITSELF (assignment/join), separate from homing_mutex_ (which guards
-  /// the homing work data below): home_joint_service_ now blocks across the whole join(), and if
-  /// that used homing_mutex_ instead, runHomingSequence()'s own brief homing_mutex_ lock (to set
-  /// homing_joint_name_/homing_target_velocity_) would deadlock against it.
-  std::mutex homing_thread_mutex_;
-  std::atomic<bool> homing_in_progress_{ false };  // guards the service against a second concurrent request
-  std::atomic<bool> homing_active_{ false };       // true while write() should override the target below
+  // Multiple joints can home concurrently via separate service calls.
+  std::atomic<int> homing_active_count_{ 0 };  // number of joints currently homing (for shutdown wait)
   std::mutex homing_mutex_;
-  std::string homing_joint_name_;       // which joint write() should override, while homing_active_
-  double homing_target_velocity_ = 0.0;  // joint-space rad/s to write for that joint, while homing_active_
+  std::map<std::string, double> homing_joints_;  // joint_name -> target_velocity, for write() override
 
   struct HomingResult
   {
@@ -156,11 +147,9 @@ protected:
     std::string message;
   };
 
-  /// Runs on homing_thread_: drives `joint_name` at its configured homing speed until its home
-  /// switch object reads triggered (or times out), then sets position_offsets_ so its home_offset
-  /// applies at that physical position. Leaves the motor's velocity at 0 either way. The calling
-  /// service callback joins homing_thread_ before returning, so this result reaches the RPC
-  /// response - see the home_joint_service_ comment on why that join is safe here.
+  /// Runs inline in service callback: drives `joint_name` at its configured homing speed until
+  /// its home switch triggers (or times out), then sets position_offsets_. Multiple can run
+  /// concurrently on different executor threads.
   HomingResult runHomingSequence(std::shared_ptr<ros2_canopen::Cia402Driver> driver, uint8_t channel,
                                   const std::string& joint_name);
 

@@ -51,12 +51,10 @@ Cia402System::~Cia402System()
 {
   // Before ~CanopenSystem() destroys the device container the manager thread uses.
   motor_manager_.stop();
+  // Wait for any in-progress homing to finish
+  while (homing_active_count_.load() > 0)
   {
-    std::scoped_lock lock(homing_thread_mutex_);
-    if (homing_thread_.joinable())
-    {
-      homing_thread_.join();
-    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
   if (service_executor_)
   {
@@ -312,12 +310,16 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
            std::shared_ptr<canopen_ros2_control::srv::HomeJoint::Response> response) {
       const std::string& joint = request->joint_name;
 
-      if (homing_in_progress_.exchange(true))
+      // Check if this specific joint is already homing
       {
-        response->success = false;
-        response->message = "Another homing operation is already in progress";
-        RCLCPP_WARN(kLogger, "Homing rejected for %s: %s", joint.c_str(), response->message.c_str());
-        return;
+        std::scoped_lock lock(homing_mutex_);
+        if (homing_joints_.count(joint) > 0)
+        {
+          response->success = false;
+          response->message = "Joint " + joint + " is already homing";
+          RCLCPP_WARN(kLogger, "Homing rejected: %s", response->message.c_str());
+          return;
+        }
       }
 
       std::shared_ptr<ros2_canopen::Cia402Driver> found_driver;
@@ -339,44 +341,25 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
       if (!found_driver || !found_driver->is_homing_enabled(found_channel))
       {
-        homing_in_progress_.store(false);
         response->success = false;
         response->message = "Joint not found or homing not enabled: " + joint;
         RCLCPP_WARN(kLogger, "Homing failed: %s", response->message.c_str());
         return;
       }
 
-      // This callback runs on service_executor_ (its own, dedicated executor/thread - see the
-      // member comment in cia402_system.hpp), NOT the shared executor_ that every CANopen driver
-      // node's poll_timer_ depends on for PDO transmission. That's what makes blocking here for
-      // the whole homing run safe: it doesn't stop RPDOs (including the homing motor's own
-      // command, and the "stop everyone else" override in write()) from continuing to go out.
+      // Runs inline on this executor thread. MultiThreadedExecutor allows concurrent calls.
       RCLCPP_INFO(kLogger, "Homing: starting for %s (blocking until it finishes)", joint.c_str());
-      HomingResult result{ false, "" };
-      {
-        std::scoped_lock lock(homing_thread_mutex_);
-        if (homing_thread_.joinable())
-        {
-          // Reap the previous homing thread - it has necessarily finished, since
-          // homing_in_progress_ gates entry to this callback.
-          homing_thread_.join();
-        }
-        homing_thread_ = std::thread([this, found_driver, found_channel, joint, &result]() {
-          result = runHomingSequence(found_driver, found_channel, joint);
-        });
-        homing_thread_.join();
-      }
+      HomingResult result = runHomingSequence(found_driver, found_channel, joint);
 
-      homing_in_progress_.store(false);
       response->success = result.success;
       response->message = result.message;
       RCLCPP_INFO(kLogger, "Homing: %s for %s - %s", result.success ? "succeeded" : "failed",
                   joint.c_str(), result.message.c_str());
     });
 
-  // Deliberately NOT executor_->add_node(service_node_) - see the member comment in
-  // cia402_system.hpp for why home_joint_service_ needs its own, separate executor to block on.
-  service_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  // MultiThreadedExecutor allows concurrent homing of multiple joints via separate service calls.
+  // Deliberately NOT executor_->add_node(service_node_) - see the member comment in cia402_system.hpp.
+  service_executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
   service_executor_->add_node(service_node_);
   service_spin_thread_ = std::make_unique<std::thread>([this]() { service_executor_->spin(); });
 
@@ -392,16 +375,14 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
   // Stop the manager first, or it would fight the halt below by re-enabling motors.
   motor_manager_.stop();
 
-  // Must finish (or time out) before the halt loop below and before the device container
-  // that runHomingSequence() is using gets torn down further down the shutdown path. Locked
-  // via homing_thread_mutex_ since home_joint_service_ may itself be blocked in join() on this
-  // same thread object right now - see that mutex's comment.
+  // Wait for any in-progress homing operations to finish before tearing down
+  if (homing_active_count_.load() > 0)
   {
-    std::scoped_lock lock(homing_thread_mutex_);
-    if (homing_thread_.joinable())
+    RCLCPP_WARN(kLogger, "Waiting for %d in-progress homing operation(s) to finish before deactivating",
+                homing_active_count_.load());
+    while (homing_active_count_.load() > 0)
     {
-      RCLCPP_WARN(kLogger, "Waiting for in-progress homing to finish before deactivating");
-      homing_thread_.join();
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
   }
 
@@ -571,22 +552,21 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     {
       std::string joint_name = motion_controller_driver->get_motor_joint_name(motor_channel);
 
-      // While homing, override this joint's target with the configured homing speed - through
-      // the exact same set_target()/PDO pathway as any other velocity command, so it's naturally
-      // re-transmitted every SYNC without any special-case refresh logic here. Does not touch
-      // MotorManager or change the mode: see runHomingSequence() for why that's deliberate.
-      // Every OTHER motor is held at zero for the duration - the vehicle must not be moving
-      // anywhere else while one axis is searching for its endstop.
-      if (homing_active_.load(std::memory_order_acquire))
+      // While any joint is homing, override homing joints' targets with their configured homing
+      // speeds - through the exact same set_target()/PDO pathway as any other velocity command.
+      // Non-homing motors are held at zero for the duration.
+      if (homing_active_count_.load(std::memory_order_acquire) > 0)
       {
-        std::string active_joint;
-        double active_speed;
+        double target = 0.0;
         {
           std::scoped_lock lock(homing_mutex_);
-          active_joint = homing_joint_name_;
-          active_speed = homing_target_velocity_;
+          auto it = homing_joints_.find(joint_name);
+          if (it != homing_joints_.end())
+          {
+            target = it->second;
+          }
         }
-        motion_controller_driver->set_target(motor_channel, (joint_name == active_joint) ? active_speed : 0.0);
+        motion_controller_driver->set_target(motor_channel, target);
         continue;
       }
 
@@ -765,15 +745,12 @@ Cia402System::HomingResult Cia402System::runHomingSequence(std::shared_ptr<ros2_
               joint_name.c_str(), speed, switch_index, switch_subindex, switch_active_value, max_travel,
               timeout_s);
 
-  // write() picks this up every cycle from here on and writes it through set_target() instead
-  // of the normal command - the exact same PDO pathway, no mode switch, nothing MotorManager
-  // would treat any differently than a normal velocity command.
+  // Register this joint for homing - write() will override its target with homing speed
   {
     std::scoped_lock lock(homing_mutex_);
-    homing_joint_name_ = joint_name;
-    homing_target_velocity_ = speed;
+    homing_joints_[joint_name] = speed;
   }
-  homing_active_.store(true, std::memory_order_release);
+  ++homing_active_count_;
 
   bool triggered = false;
   bool aborted_for_safety = false;
@@ -805,15 +782,16 @@ Cia402System::HomingResult Cia402System::runHomingSequence(std::shared_ptr<ros2_
     }
   }
 
-  // Stop overriding the target - write() reverts to whatever ros2_control is commanding next
-  // cycle. This is the "motor is released" step; nothing else to do for it.
-  homing_active_.store(false, std::memory_order_release);
+  // Stop overriding this joint's target - remove from homing map
+  {
+    std::scoped_lock lock(homing_mutex_);
+    homing_joints_.erase(joint_name);
+  }
+  --homing_active_count_;
 
   if (aborted_for_safety)
   {
-    std::ostringstream msg;
-    msg << "Exceeded max travel without seeing the home switch";
-    return { false, msg.str() };
+    return { false, "Exceeded max travel without seeing the home switch" };
   }
 
   if (!triggered)

@@ -27,6 +27,7 @@
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <cstdlib>
 #include <thread>
 #include <fstream>
@@ -124,28 +125,43 @@ void Cia402System::initDeviceContainer()
   auto drivers = device_container_->get_registered_drivers();
 
   RCLCPP_INFO(kLogger, "Number of registered drivers: '%lu'", device_container_->count_drivers());
+  cia402_drivers_.clear();
+  thomson_drivers_.clear();
   for (auto it = drivers.begin(); it != drivers.end(); it++)
   {
-    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
-
-    // initialize data for each node
-    canopen_data_[it->first] = CanopenNodeData();
-
     // initialize data for each node
     canopen_data_[it->first] = CanopenNodeData();
 
     auto nmt_state_cb = [&](canopen::NmtState nmt_state, uint8_t id) {
       canopen_data_[id].nmt_state.set_state(nmt_state);
     };
-    // register callback
-    driver->register_nmt_state_cb(nmt_state_cb);
-
     auto rpdo_cb = [&](ros2_canopen::COData data, uint8_t id) { canopen_data_[id].rpdo_data.set_data(data); };
-    // register callback
-    driver->register_rpdo_cb(rpdo_cb);
 
-    RCLCPP_INFO(kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'",
-                it->second->get_node_base_interface()->get_name(), it->first);
+    // The drivers are siblings, not a hierarchy, so the type from the bus config decides the cast.
+    const std::string driver_type = device_container_->get_driver_type(it->first);
+    if (driver_type == "ros2_canopen::Cia402Driver")
+    {
+      auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+      driver->register_nmt_state_cb(nmt_state_cb);
+      driver->register_rpdo_cb(rpdo_cb);
+      cia402_drivers_[it->first] = driver;
+    }
+    else if (driver_type == "ros2_canopen::ThomsonDriver")
+    {
+      auto driver = std::static_pointer_cast<ros2_canopen::ThomsonDriver>(it->second);
+      driver->register_nmt_state_cb(nmt_state_cb);
+      driver->register_rpdo_cb(rpdo_cb);
+      thomson_drivers_[it->first] = driver;
+    }
+    else
+    {
+      RCLCPP_ERROR(kLogger, "Driver type '%s' of node 0x%X is not supported by Cia402System, ignoring it",
+                   driver_type.c_str(), it->first);
+      continue;
+    }
+
+    RCLCPP_INFO(kLogger, "\nRegistered driver:\n    name: '%s'\n    node_id: '0x%X'\n    type: '%s'",
+                it->second->get_node_base_interface()->get_name(), it->first, driver_type.c_str());
   }
 
   RCLCPP_INFO(device_container_->get_logger(), "Initialisation successful.");
@@ -241,11 +257,30 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 {
   // Nothing here touches the bus, so activation returns immediately even with the e-stop
   // engaged. Init, fault recovery and PDO repair all happen on the manager thread.
-  motor_manager_.configure(device_container_->get_registered_drivers());
+  // Only CiA402 drives are managed; the actuators have their own enable handling in their driver.
+  std::map<uint16_t, std::shared_ptr<ros2_canopen::CanopenDriverInterface>> cia402_drivers;
+  for (const auto& entry : cia402_drivers_)
+  {
+    cia402_drivers[entry.first] = entry.second;
+  }
+  motor_manager_.configure(cia402_drivers);
 
   for (const auto& joint_name : motor_manager_.joint_names())
   {
     position_offsets_[joint_name] = 0.0;
+  }
+
+  for (const auto& entry : thomson_drivers_)
+  {
+    const std::string& joint_name = entry.second->get_joint_name();
+    if (offset_enabled_joints_.count(joint_name) > 0)
+    {
+      RCLCPP_WARN(kLogger, "Joint %s is a Thomson actuator with absolute position, ignoring enable_position_offset",
+                  joint_name.c_str());
+      offset_enabled_joints_.erase(joint_name);
+    }
+    // No command until a controller writes one, so activation never moves the actuator.
+    motor_data_[joint_name].target_position = std::numeric_limits<double>::quiet_NaN();
   }
 
   // Offsets are initialized from read(), once the drives are powered and operational.
@@ -258,10 +293,9 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
     "~/reset_position_home",
     [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
            std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-      auto drivers = device_container_->get_registered_drivers();
-      for (auto it = drivers.begin(); it != drivers.end(); ++it)
+      for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
       {
-        auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+        auto driver = it->second;
         for (auto channel : driver->get_available_motor_channels())
         {
           std::string joint = driver->get_motor_joint_name(channel);
@@ -325,10 +359,9 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
 
       std::shared_ptr<ros2_canopen::Cia402Driver> found_driver;
       uint8_t found_channel = 0;
-      auto drivers = device_container_->get_registered_drivers();
-      for (auto it = drivers.begin(); it != drivers.end() && !found_driver; ++it)
+      for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end() && !found_driver; ++it)
       {
-        auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+        auto driver = it->second;
         for (auto channel : driver->get_available_motor_channels())
         {
           if (driver->get_motor_joint_name(channel) == joint)
@@ -389,10 +422,9 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
     }
   }
 
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    auto motion_controller_driver = it->second;
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
@@ -404,6 +436,10 @@ hardware_interface::CallbackReturn Cia402System::on_deactivate(const rclcpp_life
       }
     }
   }
+  for (const auto& entry : thomson_drivers_)
+  {
+    entry.second->disable();
+  }
   return CanopenSystem::on_deactivate(previous_state);
 }
 
@@ -411,12 +447,11 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
 {
   auto ret_val = CanopenSystem::read(time, period);
 
-  auto drivers = device_container_->get_registered_drivers();
   bool any_enabled_joint_has_com_failure = false;
 
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    auto motion_controller_driver = it->second;
 
     bool com_failure = false;
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
@@ -458,6 +493,21 @@ hardware_interface::return_type Cia402System::read(const rclcpp::Time& time, con
     }
   }
 
+  // Actuators report an absolute position, so they need no offset handling.
+  for (const auto& entry : thomson_drivers_)
+  {
+    const auto& driver = entry.second;
+    auto& data = motor_data_[driver->get_joint_name()];
+    if (driver->has_communication_failure())
+    {
+      data.actual_position = 0.0;
+      data.actual_speed = 0.0;
+      continue;
+    }
+    data.actual_position = driver->get_position();
+    data.actual_speed = driver->get_speed();
+  }
+
   // Initialize offsets on first successful read of all enabled joints
   // Only once the drives are powered. With the e-stop engaged CANopen answers happily while
   // the drives are dead, and offsets captured then get persisted and reused on the next boot.
@@ -493,29 +543,79 @@ void Cia402System::stop_all_motors()
 {
   // Called every cycle while the drives are down, so it stays quiet; write() logs the
   // transition once.
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    auto motion_controller_driver = it->second;
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
     {
       motion_controller_driver->set_target(motor_channel, 0);
     }
   }
+  // Target 0 is a real position for an actuator, so disable it instead: it holds where it is.
+  for (const auto& entry : thomson_drivers_)
+  {
+    entry.second->disable();
+  }
+}
+
+bool Cia402System::actuators_ready() const
+{
+  for (const auto& entry : thomson_drivers_)
+  {
+    if (!entry.second->is_ready())
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <class DriverT>
+bool Cia402System::handle_node_commands(uint16_t node_id, DriverT& driver)
+{
+  // do same as in proxy system first - handle nmt, tpdo, rpdo
+  bool reset = false;
+  // reset node nmt
+  if (canopen_data_[node_id].nmt_state.reset_command())
+  {
+    driver.reset_node_nmt_command();
+    reset = true;
+  }
+
+  // start nmt
+  if (canopen_data_[node_id].nmt_state.start_command())
+  {
+    driver.start_node_nmt_command();
+  }
+
+  // tpdo data one shot mechanism
+  if (canopen_data_[node_id].tpdo_data.write_command())
+  {
+    canopen_data_[node_id].tpdo_data.prepare_data();
+    driver.tpdo_transmit(canopen_data_[node_id].tpdo_data.original_data);
+  }
+  return reset;
 }
 
 hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, const rclcpp::Duration& period)
 {
-  auto drivers = device_container_->get_registered_drivers();
-
   // The manager thread owns init, fault recovery, mode switching and PDO repair. The only
   // decision left here is whether the drives may be commanded at all - which keeps write()
   // free of blocking CAN round trips.
-  const bool operational = motor_manager_.is_operational();
+  const bool motors_operational = motor_manager_.is_operational();
+  const bool actuators_ok = actuators_ready();
+  const bool operational = motors_operational && actuators_ok;
   if (operational != drives_operational_)
   {
-    RCLCPP_INFO(kLogger, "%s", operational ? "All motors operational, accepting commands" :
-                                            "Motors not operational, stopping all motors");
+    if (operational)
+    {
+      RCLCPP_INFO(kLogger, "All motors operational, accepting commands");
+    }
+    else
+    {
+      RCLCPP_INFO(kLogger, "%s not operational, stopping all motors",
+                  !motors_operational ? (actuators_ok ? "Motors" : "Motors and actuators") : "Actuators");
+    }
     drives_operational_ = operational;
   }
 
@@ -525,30 +625,14 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     return hardware_interface::return_type::OK;
   }
 
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
   {
-    auto motion_controller_driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    auto motion_controller_driver = it->second;
 
-    // do same as in proxy system first - handle nmt, tpdo, rpdo
-    // reset node nmt
-    if (canopen_data_[it->first].nmt_state.reset_command())
+    if (handle_node_commands(it->first, *motion_controller_driver))
     {
-      motion_controller_driver->reset_node_nmt_command();
       // The node loses its object dictionary on reboot, so PDOs and init must be redone.
       motor_manager_.notify_external_reset();
-    }
-
-    // start nmt
-    if (canopen_data_[it->first].nmt_state.start_command())
-    {
-      motion_controller_driver->start_node_nmt_command();
-    }
-
-    // tpdo data one shot mechanism
-    if (canopen_data_[it->first].tpdo_data.write_command())
-    {
-      canopen_data_[it->first].tpdo_data.prepare_data();
-      motion_controller_driver->tpdo_transmit(canopen_data_[it->first].tpdo_data.original_data);
     }
 
     for (auto motor_channel : motion_controller_driver->get_available_motor_channels())
@@ -614,6 +698,20 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
     }
   }
 
+  for (auto it = thomson_drivers_.begin(); it != thomson_drivers_.end(); ++it)
+  {
+    auto actuator_driver = it->second;
+    handle_node_commands(it->first, *actuator_driver);
+
+    // The driver runs the enable sequence; until it is done it holds the actual position.
+    actuator_driver->enable();
+    const double target = motor_data_[actuator_driver->get_joint_name()].target_position;
+    if (std::isfinite(target))
+    {
+      actuator_driver->set_target(target);
+    }
+  }
+
   return hardware_interface::return_type::OK;
 }
 
@@ -647,10 +745,9 @@ void Cia402System::savePositionOffsets()
 
   // Snapshot under the lock; do the file I/O without holding it.
   std::vector<std::tuple<std::string, double, double>> entries;  // joint, raw, offset
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
   {
-    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    auto driver = it->second;
     for (auto channel : driver->get_available_motor_channels())
     {
       std::string joint_name = driver->get_motor_joint_name(channel);
@@ -690,10 +787,9 @@ void Cia402System::initializePositionOffsets()
   }
 
   std::scoped_lock lock(offset_mutex_);
-  auto drivers = device_container_->get_registered_drivers();
-  for (auto it = drivers.begin(); it != drivers.end(); ++it)
+  for (auto it = cia402_drivers_.begin(); it != cia402_drivers_.end(); ++it)
   {
-    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(it->second);
+    auto driver = it->second;
     for (auto channel : driver->get_available_motor_channels())
     {
       std::string joint_name = driver->get_motor_joint_name(channel);

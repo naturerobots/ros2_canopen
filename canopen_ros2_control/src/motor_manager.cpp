@@ -59,7 +59,13 @@ void MotorManager::configure(const std::map<uint16_t, std::shared_ptr<ros2_canop
   for (const auto& entry : drivers)
   {
     const uint16_t node_id = entry.first;
-    auto driver = std::static_pointer_cast<ros2_canopen::Cia402Driver>(entry.second);
+    // Only CiA402 drives can be managed. Anything else is not a Cia402Driver and is skipped.
+    auto driver = std::dynamic_pointer_cast<ros2_canopen::Cia402Driver>(entry.second);
+    if (!driver)
+    {
+      RCLCPP_WARN(kLogger, "Node 0x%X has no CiA402 driver, not managing it", node_id);
+      continue;
+    }
 
     nodes_.emplace(node_id, ManagedNode{});
 

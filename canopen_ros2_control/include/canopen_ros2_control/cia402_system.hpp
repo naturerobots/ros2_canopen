@@ -27,6 +27,7 @@
 #define CANOPEN_ROS2_CONTROL__CIA402_SYSTEM_HPP_
 
 #include "canopen_402_driver/cia402_driver.hpp"
+#include "canopen_thomson_driver/thomson_driver.hpp"
 #include "canopen_ros2_control/canopen_system.hpp"
 #include "canopen_ros2_control/motor_manager.hpp"
 #include <std_srvs/srv/trigger.hpp>
@@ -90,6 +91,11 @@ protected:
   // motor data for each registered joint name
   std::map<std::string, MotorNodeData> motor_data_;
 
+  // Registered drivers by node id, sorted by the driver type in the bus config.
+  // CiA402 drives go through MotorManager, Thomson actuators are handled here directly.
+  std::map<uint16_t, std::shared_ptr<ros2_canopen::Cia402Driver>> cia402_drivers_;
+  std::map<uint16_t, std::shared_ptr<ros2_canopen::ThomsonDriver>> thomson_drivers_;
+
   // Position offset handling for cold-start recovery
   std::map<std::string, double> position_offsets_;
   std::set<std::string> offset_enabled_joints_;  // joints with enable_position_offset=true
@@ -121,8 +127,17 @@ protected:
   void savePositionOffsets();
   bool loadPositionOffsets(std::map<std::string, double>& saved_raw, std::map<std::string, double>& saved_offsets);
 
-  /// Commands every motor to zero velocity, whenever the drives are not all operational.
+  /// Commands every motor to zero velocity and disables the actuators (they hold their position),
+  /// whenever the drives are not all operational.
   void stop_all_motors();
+
+  /// All Thomson actuators deliver feedback and report no fault.
+  bool actuators_ready() const;
+
+  /// NMT and one-shot TPDO commands from the CanopenSystem interfaces for one node.
+  /// Returns true if an NMT reset was sent.
+  template <class DriverT>
+  bool handle_node_commands(uint16_t node_id, DriverT& driver);
 
   /// Owns init, fault recovery, mode switching, PDO repair and NMT resets on its own thread.
   /// write() only reads its is_operational() flag.

@@ -15,6 +15,7 @@
   <depend>canopen_402_driver</depend>
   <depend>canopen_core</depend>
   <depend>canopen_proxy_driver</depend>
+  <depend>canopen_thomson_driver</depend>
   <depend>hardware_interface</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>

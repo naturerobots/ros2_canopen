@@ -10,6 +10,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   canopen_402_driver
   canopen_core
   canopen_proxy_driver
+  canopen_thomson_driver
   hardware_interface
   pluginlib
   rclcpp

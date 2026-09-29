@@ -241,22 +241,14 @@ bool Motor402::switchMode(uint16_t mode)
     try
     {
       std::chrono::steady_clock::time_point abstime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-      if (monitor_mode_)
+      // Always poll mode_id_ via SDO - PDO-based monitoring unreliable when mode not in TPDO
+      while (mode_id_ != mode && std::chrono::steady_clock::now() < abstime)
       {
-        while (mode_id_ != mode && mode_cond_.wait_until(lock, abstime) == std::cv_status::no_timeout)
-        {
-        }
-      }
-      else
-      {
-        while (mode_id_ != mode && std::chrono::steady_clock::now() < abstime)
-        {
-          lock.unlock();                                                    // unlock inside loop
-          int8_t polled_mode = driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);
-          std::this_thread::sleep_for(std::chrono::milliseconds(20));       // wait some time
-          lock.lock();
-          mode_id_ = polled_mode;  // store polled value
-        }
+        lock.unlock();
+        int8_t polled_mode = driver->universal_get_value<int8_t>(op_mode_display_index, 0x0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        lock.lock();
+        mode_id_ = polled_mode;
       }
       has_communication_failure_ = false;
     }
@@ -272,6 +264,7 @@ bool Motor402::switchMode(uint16_t mode)
       okay = true;
       if (enable_diagnostics_.load())
       {
+        this->diag_collector_->addf(joint_name_ + "_cia402_set_mode", "Mode set: %d", mode);
       }
     }
     else

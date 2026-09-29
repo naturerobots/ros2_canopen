@@ -267,6 +267,36 @@ void NodeCanopenThomsonDriver<NODETYPE>::poll_timer_callback()
     return;
   }
 
+  // Poll feedback via SDO if TPDO not delivering data (PDO disabled or misconfigured)
+  try
+  {
+    uint16_t pos_raw =
+        this->lely_driver_->template universal_get_value<uint16_t>(fb_position_.index, fb_position_.subindex);
+    const auto now = std::chrono::steady_clock::now();
+    if (feedback_received_.load())
+    {
+      const double dt = std::chrono::duration<double>(now - last_position_time_).count();
+      if (dt > 0.0)
+      {
+        actual_speed_ = (from_raw(pos_raw) - from_raw(last_position_raw_)) / dt;
+      }
+    }
+    last_position_raw_ = pos_raw;
+    last_position_time_ = now;
+    actual_raw_ = pos_raw;
+    last_feedback_ns_ = steady_now_ns();
+    feedback_received_ = true;
+
+    actual_current_ = this->lely_driver_->template universal_get_value<uint16_t>(fb_current_.index, fb_current_.subindex);
+    status_ = this->lely_driver_->template universal_get_value<uint8_t>(fb_status_.index, fb_status_.subindex);
+    flags_ = this->lely_driver_->template universal_get_value<uint8_t>(fb_flags_.index, fb_flags_.subindex);
+  }
+  catch (const std::exception& e)
+  {
+    RCLCPP_ERROR_THROTTLE(this->node_->get_logger(), *this->node_->get_clock(), 1000,
+                          "Thomson actuator '%s': reading feedback failed: %s", joint_name_.c_str(), e.what());
+  }
+
   // Feedback coming back after a dropout: the actuator may have rebooted and lost the enable.
   const bool comm_failure = has_communication_failure();
   if (comm_failure_seen_ && !comm_failure)

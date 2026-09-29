@@ -139,6 +139,7 @@ private:
   ThomsonObject cmd_current_limit_;
   ThomsonObject cmd_speed_;
   ThomsonObject cmd_aux_;
+  ThomsonObject cmd_aux2_;  // Device has aux split into two 8-bit objects
   ThomsonObject cmd_enable_;
   ThomsonObject fb_position_;
   ThomsonObject fb_current_;

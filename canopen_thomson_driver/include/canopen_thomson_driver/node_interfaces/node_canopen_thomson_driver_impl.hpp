@@ -105,16 +105,17 @@ void NodeCanopenThomsonDriver<NODETYPE>::configure(bool called_from_base)
     throw DriverException("min_raw must not be larger than max_raw");
   }
 
-  // Defaults match the objects of thomson_placeholder.eds.
-  cmd_position_ = read_object("cmd_position_object", { 0x2100, 1 });
-  cmd_current_limit_ = read_object("cmd_current_limit_object", { 0x2100, 2 });
-  cmd_speed_ = read_object("cmd_speed_object", { 0x2100, 3 });
-  cmd_aux_ = read_object("cmd_aux_object", { 0x2100, 4 });
-  cmd_enable_ = read_object("cmd_enable_object", { 0x2100, 5 });
-  fb_position_ = read_object("fb_position_object", { 0x2110, 1 });
-  fb_current_ = read_object("fb_current_object", { 0x2110, 2 });
-  fb_status_ = read_object("fb_status_object", { 0x2110, 4 });
-  fb_flags_ = read_object("fb_flags_object", { 0x2110, 5 });
+  // Defaults match actual device PDO mapping (0x2100:00, 0x2101:00, etc. - separate objects, not subindices)
+  cmd_position_ = read_object("cmd_position_object", { 0x2100, 0 });
+  cmd_current_limit_ = read_object("cmd_current_limit_object", { 0x2101, 0 });
+  cmd_speed_ = read_object("cmd_speed_object", { 0x2102, 0 });
+  cmd_aux_ = read_object("cmd_aux_object", { 0x2103, 0 });   // aux high byte (0xF0 from 0x00F0)
+  cmd_aux2_ = read_object("cmd_aux2_object", { 0x2104, 0 }); // aux low byte (0x00 from 0x00F0)
+  cmd_enable_ = read_object("cmd_enable_object", { 0x2105, 0 });
+  fb_position_ = read_object("fb_position_object", { 0x2200, 0 });
+  fb_current_ = read_object("fb_current_object", { 0x2201, 0 });
+  fb_status_ = read_object("fb_status_object", { 0x2204, 0 });
+  fb_flags_ = read_object("fb_flags_object", { 0x2205, 0 });
 
   RCLCPP_INFO(this->node_->get_logger(),
               "Thomson actuator '%s': center %.1f, scale %.3f raw/rad, raw range [%u, %u], current limit %u, "
@@ -248,12 +249,17 @@ template <class NODETYPE>
 void NodeCanopenThomsonDriver<NODETYPE>::write_command(uint16_t position_raw, uint8_t enable)
 {
   // All objects live in one synchronous RPDO, so the master sends them together on the next SYNC.
+  // Object sizes must match PDO mapping: pos(16), current(16), speed(8), aux(8), aux2(8), enable(8)
   this->lely_driver_->template universal_set_value<uint16_t>(cmd_position_.index, cmd_position_.subindex,
                                                              position_raw);
   this->lely_driver_->template universal_set_value<uint16_t>(cmd_current_limit_.index, cmd_current_limit_.subindex,
                                                              current_limit_);
   this->lely_driver_->template universal_set_value<uint8_t>(cmd_speed_.index, cmd_speed_.subindex, speed_);
-  this->lely_driver_->template universal_set_value<uint16_t>(cmd_aux_.index, cmd_aux_.subindex, aux_);
+  // aux is 16-bit config value split into two 8-bit PDO objects (low byte first, matching steer.sh)
+  this->lely_driver_->template universal_set_value<uint8_t>(cmd_aux_.index, cmd_aux_.subindex,
+                                                            static_cast<uint8_t>(aux_ & 0xFF));
+  this->lely_driver_->template universal_set_value<uint8_t>(cmd_aux2_.index, cmd_aux2_.subindex,
+                                                            static_cast<uint8_t>(aux_ >> 8));
   this->lely_driver_->template universal_set_value<uint8_t>(cmd_enable_.index, cmd_enable_.subindex, enable);
 }
 

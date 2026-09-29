@@ -130,6 +130,13 @@ void NodeCanopenThomsonDriver<NODETYPE>::activate(bool called_from_base)
   enable_state_ = EnableState::Disabled;
   state_cycles_ = 0;
   sequence_done_ = false;
+
+  // Explicitly start the device via NMT - master may not do this automatically
+  if (this->lely_driver_)
+  {
+    RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': sending NMT Start", joint_name_.c_str());
+    this->lely_driver_->nmt_command(canopen::NmtCommand::START);
+  }
 }
 
 template <class NODETYPE>

@@ -136,6 +136,7 @@ private:
   std::chrono::milliseconds feedback_timeout_{ 1000 };
   uint8_t rearm_flag_mask_ = 0x01;
   uint8_t fault_flag_mask_ = 0x00;
+  std::chrono::milliseconds fault_reset_interval_{ 2000 };  // 0 = never reset the node on a fault
 
   ThomsonObject cmd_position_;
   ThomsonObject cmd_current_limit_;
@@ -160,6 +161,8 @@ private:
   uint32_t state_cycles_ = 0;
   std::chrono::steady_clock::time_point last_rearm_;
   bool comm_failure_seen_ = false;
+  bool fault_seen_ = false;
+  std::chrono::steady_clock::time_point last_fault_reset_;
 
   // feedback side, written by on_rpdo, read by ros2_control
   std::atomic<uint16_t> actual_raw_{ 0 };

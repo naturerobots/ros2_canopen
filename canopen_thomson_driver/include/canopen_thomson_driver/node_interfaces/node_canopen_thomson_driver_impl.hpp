@@ -93,6 +93,8 @@ void NodeCanopenThomsonDriver<NODETYPE>::configure(bool called_from_base)
     rearm_flag_mask_ = static_cast<uint8_t>(config["rearm_flag_mask"].as<uint16_t>());
   if (config["fault_flag_mask"])
     fault_flag_mask_ = static_cast<uint8_t>(config["fault_flag_mask"].as<uint16_t>());
+  if (config["fault_reset_interval_ms"])
+    fault_reset_interval_ = std::chrono::milliseconds(config["fault_reset_interval_ms"].as<uint32_t>());
 
   if (min_raw_ > max_raw_)
   {
@@ -314,6 +316,29 @@ void NodeCanopenThomsonDriver<NODETYPE>::poll_timer_callback()
   comm_failure_seen_ = comm_failure;
 
   const auto now = std::chrono::steady_clock::now();
+
+  // A latched fault (e.g. overcurrent) keeps the actuator dead. Motion is disabled below; if the
+  // fault does not clear, reset the node. Its boot-up then re-arms through on_nmt().
+  const bool fault = has_fault();
+  if (fault && !fault_seen_)
+  {
+    RCLCPP_ERROR(this->node_->get_logger(), "Thomson actuator '%s': fault (flags 0x%02X), disabling motion",
+                 joint_name_.c_str(), flags_.load());
+    last_fault_reset_ = now;
+  }
+  else if (!fault && fault_seen_)
+  {
+    RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': fault cleared", joint_name_.c_str());
+  }
+  fault_seen_ = fault;
+  if (fault && fault_reset_interval_.count() > 0 && now - last_fault_reset_ > fault_reset_interval_)
+  {
+    RCLCPP_WARN(this->node_->get_logger(), "Thomson actuator '%s': fault persists, sending NMT reset node",
+                joint_name_.c_str());
+    this->lely_driver_->nmt_command(canopen::NmtCommand::RESET_NODE);
+    last_fault_reset_ = now;
+  }
+
   if (enable_state_ == EnableState::Enabled && (flags_.load() & rearm_flag_mask_) != 0 &&
       now - last_rearm_ > kRearmInterval)
   {

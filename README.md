@@ -56,45 +56,14 @@ These are some of the features this stack implements. For further information pl
   this case the device container will load the drivers for master and slave nodes based on the bus configuration. Each driver will be a lifecycle node and expose a ROS 2 interface. The lifecycle manager can be used to bring all
   device up and down in the correct sequence.
 * **ROS2 control based operation**
-  Currently, multiple ros2_control interfaces are available. These can be used for controlling CANopen devices. The interfaces are:
-  * canopen_ros2_control/CANopenSystem
-  * canopen_ros2_control/Cia402System (preferred for CiA 402 motor controllers)
-  * canopen_ros2_control/RobotSystem
-
-  **Cia402System** is the preferred hardware interface for CiA 402 compliant motor controllers. It supports multi-channel devices (multiple motors per CANopen node) and includes features like automatic fault recovery.
-
-  ### Cia402System Joint Parameters
-
-  Per-joint parameters can be configured in the URDF ros2_control section:
-
-  | Parameter | Type | Default | Description |
-  |-----------|------|---------|-------------|
-  | `device_name` | string | required | Name of CANopen device in bus config |
-  | `enable_position_offset` | bool | false | Enable position offset handling for cold-start recovery |
-
-  #### Position Offset Feature
-
-  Motor controllers that reset their encoder position to 0 on power-cycle can cause issues when the physical position was non-zero at shutdown. The position offset feature solves this by:
-
-  1. Periodically saving raw motor positions and offsets to `/var/lib/ros2_canopen/position_offsets.txt`
-  2. On startup, detecting if motors cold-started (position reset) or warm-restarted (position preserved)
-  3. Calculating appropriate offsets to maintain consistent position reporting
-
-  Enable per joint in URDF:
-  ```xml
-  <joint name="front_right_steering">
-    <param name="device_name">roboteq_steering_right</param>
-    <param name="enable_position_offset">true</param>
-    <command_interface name="velocity"/>
-    <state_interface name="position"/>
-  </joint>
-  ```
-
-  Service `~/reset_position_home` (std_srvs/Trigger) manually resets current position as 0 for all offset-enabled joints.
+  `canopen_ros2_control/Cia402System` is the supported ros2_control hardware interface; `CanopenSystem`
+  and `RobotSystem` are deprecated. See [canopen_ros2_control](canopen_ros2_control/README.md) for
+  requirements (PDO/SDO, NMT, auto init), URDF parameters and a full configuration example.
 * **CANopen drivers**
   Currently, the following drivers are available:
-    * ProxyDriver
-    * Cia402Driver
+    * ProxyDriver ([readme](canopen_proxy_driver/readme.md))
+    * Cia402Driver ([readme](canopen_402_driver/README.md))
+    * ThomsonDriver ([readme](canopen_thomson_driver/README.md))
 
 
 ## Post testing

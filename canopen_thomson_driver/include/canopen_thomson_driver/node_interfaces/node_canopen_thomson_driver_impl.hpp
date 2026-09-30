@@ -69,18 +69,12 @@ void NodeCanopenThomsonDriver<NODETYPE>::configure(bool called_from_base)
   }
   joint_name_ = config["joint_name"].as<std::string>();
 
-  if (!config["scale_pos_to_dev"])
-  {
-    throw DriverException("Thomson driver needs scale_pos_to_dev (raw units per rad) in the bus config");
-  }
-  scale_pos_to_dev_ = config["scale_pos_to_dev"].as<double>();
-  if (scale_pos_to_dev_ == 0.0)
-  {
-    throw DriverException("scale_pos_to_dev must not be 0");
-  }
+  // Linear: raw = center_position + rad * scale_pos_to_dev. Unused with position_conversion: table.
+  const double scale_pos_to_dev = config["scale_pos_to_dev"] ? config["scale_pos_to_dev"].as<double>() : 0.0;
+  const double center_position = config["center_position"] ? config["center_position"].as<double>() : 900.0;
+  position_conversion_ = ValueConversion(config, "position", scale_pos_to_dev,
+                                         scale_pos_to_dev != 0.0 ? 1.0 / scale_pos_to_dev : 0.0, center_position);
 
-  if (config["center_position"])
-    center_position_ = config["center_position"].as<double>();
   if (config["min_raw"])
     min_raw_ = config["min_raw"].as<uint16_t>();
   if (config["max_raw"])
@@ -118,9 +112,10 @@ void NodeCanopenThomsonDriver<NODETYPE>::configure(bool called_from_base)
   fb_flags_ = read_object("fb_flags_object", { 0x2205, 0 });
 
   RCLCPP_INFO(this->node_->get_logger(),
-              "Thomson actuator '%s': center %.1f, scale %.3f raw/rad, raw range [%u, %u], current limit %u, "
-              "speed %u",
-              joint_name_.c_str(), center_position_, scale_pos_to_dev_, min_raw_, max_raw_, current_limit_, speed_);
+              "Thomson actuator '%s': %s position conversion, raw at 0 rad %.1f, raw range [%u, %u], "
+              "current limit %u, speed %u",
+              joint_name_.c_str(), position_conversion_.is_table() ? "table" : "linear",
+              position_conversion_.to_dev(0.0), min_raw_, max_raw_, current_limit_, speed_);
 }
 
 template <class NODETYPE>
@@ -149,14 +144,14 @@ void NodeCanopenThomsonDriver<NODETYPE>::deactivate(bool called_from_base)
 template <class NODETYPE>
 uint16_t NodeCanopenThomsonDriver<NODETYPE>::to_raw(double position) const
 {
-  const double raw = std::round(center_position_ + position * scale_pos_to_dev_);
+  const double raw = std::round(position_conversion_.to_dev(position));
   return static_cast<uint16_t>(std::clamp(raw, static_cast<double>(min_raw_), static_cast<double>(max_raw_)));
 }
 
 template <class NODETYPE>
 double NodeCanopenThomsonDriver<NODETYPE>::from_raw(uint16_t raw) const
 {
-  return (static_cast<double>(raw) - center_position_) / scale_pos_to_dev_;
+  return position_conversion_.from_dev(static_cast<double>(raw));
 }
 
 template <class NODETYPE>

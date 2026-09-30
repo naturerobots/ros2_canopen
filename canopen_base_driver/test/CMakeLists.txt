@@ -24,5 +24,14 @@ target_include_directories(test_base_driver_component PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/
 )
 
+ament_add_gtest(test_value_conversion
+test_value_conversion.cpp
+)
+ament_target_dependencies(test_value_conversion
+  ${dependencies}
+)
+target_include_directories(test_value_conversion PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+)
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/master.dcf DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

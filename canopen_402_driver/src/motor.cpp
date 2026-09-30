@@ -55,12 +55,12 @@ bool Motor402::setTarget(double val)
     if ((mode == MotorBase::Profiled_Position) or (mode == MotorBase::Cyclic_Synchronous_Position) or
         (mode == MotorBase::Interpolated_Position))
     {
-      target = val * scale_pos_to_dev_;
+      target = position_conversion_.to_dev(val);
     }
     else if ((mode == MotorBase::Velocity) or (mode == MotorBase::Profiled_Velocity) or
              (mode == MotorBase::Cyclic_Synchronous_Velocity))
     {
-      target = val * scale_vel_to_dev_;
+      target = velocity_conversion_.to_dev(val);
     }
 
     std::scoped_lock lock(mode_mutex_);

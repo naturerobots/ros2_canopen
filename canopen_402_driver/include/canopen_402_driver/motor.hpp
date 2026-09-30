@@ -34,6 +34,7 @@
 #include "canopen_402_driver/profiled_position_mode.hpp"
 #include "canopen_base_driver/diagnostic_collector.hpp"
 #include "canopen_base_driver/lely_driver_bridge.hpp"
+#include "canopen_base_driver/value_conversion.hpp"
 
 namespace ros2_canopen
 {
@@ -86,8 +87,8 @@ class Motor402 : public MotorBase
 {
 public:
   Motor402(std::shared_ptr<LelyDriverBridge> driver, ros2_canopen::State402::InternalState switching_state,
-           std::string joint_name, double scale_pos_to_dev, double scale_pos_from_dev, double scale_vel_to_dev,
-           double scale_vel_from_dev, uint16_t default_operation_mode, uint8_t channel,
+           std::string joint_name, ValueConversion position_conversion, ValueConversion velocity_conversion,
+           uint16_t default_operation_mode, uint8_t channel,
            uint32_t state_switch_timeout_ms = 1000,
            bool homing_enabled = false, double homing_fast_speed = 0.0, double homing_slow_speed = 0.0,
            double homing_backoff_speed = 0.0, double homing_backoff_time = 0.5,
@@ -97,10 +98,8 @@ public:
            double homing_timeout = 30.0)
     : MotorBase()
     , joint_name_(joint_name)
-    , scale_pos_to_dev_(scale_pos_to_dev)
-    , scale_pos_from_dev_(scale_pos_from_dev)
-    , scale_vel_to_dev_(scale_vel_to_dev)
-    , scale_vel_from_dev_(scale_vel_from_dev)
+    , position_conversion_(std::move(position_conversion))
+    , velocity_conversion_(std::move(velocity_conversion))
     , default_operation_mode_(default_operation_mode)
     , channel_(channel)
     , homing_enabled_(homing_enabled)
@@ -438,7 +437,8 @@ public:
     {
       try
       {
-        double value = this->driver->universal_get_value<int32_t>(speed_feedback_index, 0) * scale_vel_from_dev_;
+        double value =
+            velocity_conversion_.from_dev(this->driver->universal_get_value<int32_t>(speed_feedback_index, 0));
         has_communication_failure_ = false;
         return value;
       }
@@ -457,7 +457,8 @@ public:
     {
       try
       {
-        double value = this->driver->universal_get_value<int32_t>(position_feedback_index, 0) * scale_pos_from_dev_;
+        double value =
+            position_conversion_.from_dev(this->driver->universal_get_value<int32_t>(position_feedback_index, 0));
         has_communication_failure_ = false;
         return value;
       }
@@ -521,10 +522,8 @@ private:
 
   std::string joint_name_;
 
-  double scale_pos_to_dev_;
-  double scale_pos_from_dev_;
-  double scale_vel_to_dev_;
-  double scale_vel_from_dev_;
+  ValueConversion position_conversion_;
+  ValueConversion velocity_conversion_;
 
   // default operation mode to set
   uint16_t default_operation_mode_;

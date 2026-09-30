@@ -20,6 +20,7 @@
 #include <mutex>
 #include <string>
 
+#include "canopen_base_driver/value_conversion.hpp"
 #include "canopen_proxy_driver/node_interfaces/node_canopen_proxy_driver.hpp"
 
 namespace ros2_canopen
@@ -45,7 +46,9 @@ struct ThomsonObject
  * The command RPDO must be mapped with synchronous transmission (bus.yml `transmission: 0x01`):
  * the master then sends the complete command frame on every SYNC.
  *
- * The joint position is the steering angle in rad: raw = center_position + rad * scale_pos_to_dev.
+ * The joint position is the steering angle in rad, converted by ValueConversion "position":
+ * linear raw = center_position + rad * scale_pos_to_dev (default), or `position_conversion: table`
+ * with measured `position_table_to_dev` / `position_table_from_dev` for a nonlinear steering linkage.
  */
 template <class NODETYPE>
 class NodeCanopenThomsonDriver : public NodeCanopenProxyDriver<NODETYPE>
@@ -123,8 +126,7 @@ private:
 
   // configuration (bus.yml)
   std::string joint_name_;
-  double center_position_ = 900.0;
-  double scale_pos_to_dev_ = 1.0;
+  ValueConversion position_conversion_;
   uint16_t min_raw_ = 0;
   uint16_t max_raw_ = 0xFFFF;
   uint16_t current_limit_ = 0x00DC;

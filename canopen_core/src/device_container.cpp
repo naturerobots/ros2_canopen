@@ -321,6 +321,7 @@ bool DeviceContainer::load_drivers()
       constexpr int post_reset_delay_ms = 2000;  // longer wait after NMT reset
       bool init_success = false;
       int total_attempts = 0;
+      std::string last_error;
 
       for (int block = 1; block <= max_blocks && !init_success; ++block)
       {
@@ -334,6 +335,7 @@ bool DeviceContainer::load_drivers()
           }
           catch (const std::exception & e)
           {
+            last_error = e.what();
             RCLCPP_WARN(
               this->get_logger(),
               "Driver init failed for %s (block %d/%d, attempt %d/%d): %s",
@@ -380,8 +382,8 @@ bool DeviceContainer::load_drivers()
       {
         RCLCPP_ERROR(
           this->get_logger(),
-          "Driver init failed for %s after %d attempts (%d blocks)",
-          it->c_str(), total_attempts, max_blocks);
+          "Driver init failed for %s after %d attempts (%d blocks): %s",
+          it->c_str(), total_attempts, max_blocks, last_error.c_str());
         return false;
       }
     }

@@ -134,6 +134,9 @@ protected:
   /// All Thomson actuators deliver feedback and report no fault.
   bool actuators_ready() const;
 
+  /// Comma separated list of the actuators that are not ready, with the reason.
+  std::string describe_unready_actuators() const;
+
   /// NMT and one-shot TPDO commands from the CanopenSystem interfaces for one node.
   /// Returns true if an NMT reset was sent.
   template <class DriverT>

@@ -39,6 +39,8 @@
 namespace
 {
 auto const kLogger = rclcpp::get_logger("Cia402System");
+/// Paces throttled log messages, independent of sim time.
+rclcpp::Clock kLogClock(RCL_STEADY_TIME);
 }
 
 namespace canopen_ros2_control
@@ -570,6 +572,22 @@ bool Cia402System::actuators_ready() const
   return true;
 }
 
+std::string Cia402System::describe_unready_actuators() const
+{
+  std::string out;
+  for (const auto& entry : thomson_drivers_)
+  {
+    const auto& driver = entry.second;
+    if (driver->is_ready())
+    {
+      continue;
+    }
+    out += (out.empty() ? "" : ", ") + driver->get_joint_name() +
+           (driver->has_communication_failure() ? " (not communicating, powered?)" : " (fault)");
+  }
+  return out;
+}
+
 template <class DriverT>
 bool Cia402System::handle_node_commands(uint16_t node_id, DriverT& driver)
 {
@@ -617,6 +635,13 @@ hardware_interface::return_type Cia402System::write(const rclcpp::Time& time, co
                   !motors_operational ? (actuators_ok ? "Motors" : "Motors and actuators") : "Actuators");
     }
     drives_operational_ = operational;
+  }
+
+  if (!actuators_ok)
+  {
+    // Same cadence as the motor manager's "Waiting for" digest, which only covers CiA402 drives.
+    // The message is only built when it is actually printed.
+    RCLCPP_WARN_THROTTLE(kLogger, kLogClock, 10000, "Waiting for actuator(s): %s", describe_unready_actuators().c_str());
   }
 
   if (!operational)

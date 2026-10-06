@@ -104,8 +104,11 @@ void LelyDriverBridge::OnBoot(canopen::NmtState st, char es, const ::std::string
   if (es == 0)
   {
     booted.store(true);
+    // Also covers devices that were not powered at startup and booted later on.
+    RCLCPP_INFO(rclcpp::get_logger(name_), "Device booted");
   }
   std::unique_lock<std::mutex> lck(boot_mtex);
+  this->boot_done = true;
   this->boot_state = st;
   this->boot_status = es;
   this->boot_what = what;

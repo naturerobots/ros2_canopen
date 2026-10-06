@@ -44,9 +44,12 @@ void ConfigurationManager::init_config()
       config_node["dcf_path"] = dcf_path;
     }
     // Propagate bus-wide defaults that a device may override individually.
-    if (global_options["boot_timeout_ms"] && !config_node["boot_timeout_ms"])
+    for (const char * key : {"boot_timeout_ms", "boot_wait_ms"})
     {
-      config_node["boot_timeout_ms"] = global_options["boot_timeout_ms"];
+      if (global_options[key] && !config_node[key])
+      {
+        config_node[key] = global_options[key];
+      }
     }
     devices_.insert({driver_name, config_node});
   }

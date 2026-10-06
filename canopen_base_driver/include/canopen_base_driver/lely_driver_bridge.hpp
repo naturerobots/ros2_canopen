@@ -308,6 +308,7 @@ protected:
 
   // BOOT synchronisation items
   std::atomic<bool> booted;
+  bool boot_done = false;  // OnBoot() ran since the last Boot(), guarded by boot_mtex
   char boot_status;
   std::string boot_what;
   canopen::NmtState boot_state;
@@ -656,27 +657,27 @@ public:
   /**
    * @brief Wait for device to be booted
    *
-   * @return true
-   * @return false
+   * @param [in] timeout    Maximum time to wait for the boot process to finish
+   * @return true if the device booted, false if the boot did not finish within timeout
+   * @throws std::system_error if the boot process finished with an error
    */
-  bool wait_for_boot()
+  bool wait_for_boot(std::chrono::milliseconds timeout)
   {
     if (booted.load())
     {
       return true;
     }
     std::unique_lock<std::mutex> lck(boot_mtex);
-    boot_cond.wait(lck);
+    if (!boot_cond.wait_for(lck, timeout, [this] { return boot_done; }))
+    {
+      return false;
+    }
     if ((boot_status != 0) && (boot_status != 'L'))
     {
       throw std::system_error(boot_status, LelyBridgeErrCategory(), "Boot Issue");
     }
-    else
-    {
-      booted.store(true);
-      return true;
-    }
-    return false;
+    booted.store(true);
+    return true;
   }
 
   void set_sync_function(std::function<void()> on_sync_function)
@@ -696,6 +697,10 @@ public:
   void Boot()
   {
     booted.store(false);
+    {
+      std::scoped_lock<std::mutex> lck(boot_mtex);
+      boot_done = false;
+    }
     FiberDriver::Boot();
   }
 

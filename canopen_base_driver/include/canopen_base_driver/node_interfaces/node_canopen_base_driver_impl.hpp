@@ -226,18 +226,28 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
   this->driver_ = std::static_pointer_cast<lely::canopen::BasicDriver>(this->lely_driver_);
   if (!this->lely_driver_->IsReady())
   {
-    RCLCPP_WARN(this->node_->get_logger(), "Wait for device to boot.");
+    // An unpowered device never answers, so never block startup on it. The master boots it as
+    // soon as its boot-up message arrives, and the drivers initialize it from there.
+    const auto boot_wait = std::chrono::milliseconds(
+        this->config_["boot_wait_ms"] ? this->config_["boot_wait_ms"].as<int>() : 1000);
+    RCLCPP_INFO(this->node_->get_logger(), "Wait up to %ld ms for device to boot.", (long)boot_wait.count());
     this->lely_driver_->Boot();
     try
     {
-      this->lely_driver_->wait_for_boot();
+      if (!this->lely_driver_->wait_for_boot(boot_wait))
+      {
+        RCLCPP_WARN(this->node_->get_logger(),
+                    "Device (node id %u) did not boot within %ld ms, is it powered? Continuing without it; "
+                    "it is initialized automatically once it comes online.",
+                    (unsigned)this->node_id_, (long)boot_wait.count());
+      }
     }
     catch (const std::exception& e)
     {
-      RCLCPP_ERROR(this->node_->get_logger(), e.what());
+      RCLCPP_ERROR(this->node_->get_logger(), "%s", e.what());
     }
   }
-  RCLCPP_INFO(this->node_->get_logger(), "Driver booted and ready.");
+  RCLCPP_INFO(this->node_->get_logger(), "Driver added to master.");
 
   if (diagnostic_enabled_.load())
   {

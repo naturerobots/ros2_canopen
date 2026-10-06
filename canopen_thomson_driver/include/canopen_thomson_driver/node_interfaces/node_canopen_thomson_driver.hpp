@@ -161,6 +161,7 @@ private:
   uint32_t state_cycles_ = 0;
   std::chrono::steady_clock::time_point last_rearm_;
   bool comm_failure_seen_ = false;
+  bool online_ = false;  // last poll had valid feedback, for the available/lost log messages
   bool fault_seen_ = false;
   std::chrono::steady_clock::time_point last_fault_reset_;
 

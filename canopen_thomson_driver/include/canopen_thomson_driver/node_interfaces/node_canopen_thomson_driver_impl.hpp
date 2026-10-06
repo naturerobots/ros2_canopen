@@ -314,6 +314,16 @@ void NodeCanopenThomsonDriver<NODETYPE>::poll_timer_callback()
     request_rearm("feedback restored");
   }
   comm_failure_seen_ = comm_failure;
+  // Unlike comm_failure_seen_, this also reports the very first feedback, e.g. after powering on.
+  if (!comm_failure && !online_)
+  {
+    RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': available now", joint_name_.c_str());
+  }
+  else if (comm_failure && online_)
+  {
+    RCLCPP_WARN(this->node_->get_logger(), "Thomson actuator '%s': lost communication", joint_name_.c_str());
+  }
+  online_ = !comm_failure;
 
   const auto now = std::chrono::steady_clock::now();
 

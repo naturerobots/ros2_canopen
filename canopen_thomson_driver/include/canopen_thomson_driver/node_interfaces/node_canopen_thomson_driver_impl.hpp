@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <future>
+#include <stdexcept>
 
 #include "canopen_core/driver_error.hpp"
 #include "canopen_thomson_driver/node_interfaces/node_canopen_thomson_driver.hpp"
@@ -27,6 +29,14 @@ namespace
 {
 // Minimum time between two re-arm sequences, so a flag that stays set does not toggle forever.
 constexpr auto kRearmInterval = std::chrono::seconds(1);
+// Re-arms in a row that did not enable motion before the node is reset.
+constexpr uint32_t kMaxRearmAttempts = 5;
+// While the actuator is offline every feedback read waits for the full SDO timeout. Probing only this
+// often keeps that from stalling the executor the other drivers share.
+constexpr auto kOfflineProbeInterval = std::chrono::milliseconds(200);
+// Feedback is read by SDO, which also works while the actuator is PRE-OPERATIONAL. The bridge times
+// a transfer out after 20 ms, so the future normally resolves before this.
+constexpr auto kSdoWait = std::chrono::milliseconds(30);
 
 int64_t steady_now_ns()
 {
@@ -95,6 +105,8 @@ void NodeCanopenThomsonDriver<NODETYPE>::configure(bool called_from_base)
     fault_flag_mask_ = static_cast<uint8_t>(config["fault_flag_mask"].as<uint16_t>());
   if (config["fault_reset_interval_ms"])
     fault_reset_interval_ = std::chrono::milliseconds(config["fault_reset_interval_ms"].as<uint32_t>());
+  if (config["offline_reset_interval_ms"])
+    offline_reset_interval_ = std::chrono::milliseconds(config["offline_reset_interval_ms"].as<uint32_t>());
 
   if (min_raw_ > max_raw_)
   {
@@ -127,12 +139,13 @@ void NodeCanopenThomsonDriver<NODETYPE>::activate(bool called_from_base)
   enable_state_ = EnableState::Disabled;
   state_cycles_ = 0;
   sequence_done_ = false;
+  rearm_attempts_ = 0;
+  // Give a device that is still booting the full interval before resetting it.
+  last_offline_reset_ = std::chrono::steady_clock::now();
 
-  // Explicitly start the device via NMT - master may not do this automatically
   if (this->lely_driver_)
   {
-    RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': sending NMT Start", joint_name_.c_str());
-    this->lely_driver_->nmt_command(canopen::NmtCommand::START);
+    send_nmt_start("activate");
   }
 }
 
@@ -250,6 +263,41 @@ void NodeCanopenThomsonDriver<NODETYPE>::request_rearm(const char* reason)
 }
 
 template <class NODETYPE>
+void NodeCanopenThomsonDriver<NODETYPE>::send_nmt_start(const char* reason)
+{
+  // The actuator only accepts the command RPDO in OPERATIONAL. The master does not reliably start it:
+  // its boot process aborts when the actuator rejects part of the configuration download. NMT Start
+  // to an operational node does nothing, so sending it again is always safe.
+  RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': sending NMT Start (%s)", joint_name_.c_str(), reason);
+  this->lely_driver_->nmt_command(canopen::NmtCommand::START);
+}
+
+template <class NODETYPE>
+void NodeCanopenThomsonDriver<NODETYPE>::send_nmt_reset(const char* reason)
+{
+  // The boot-up that follows is handled like any other: NMT Start, then the enable sequence.
+  RCLCPP_WARN(this->node_->get_logger(), "Thomson actuator '%s': sending NMT reset node (%s)", joint_name_.c_str(),
+              reason);
+  this->lely_driver_->nmt_command(canopen::NmtCommand::RESET_NODE);
+  rearm_attempts_ = 0;
+}
+
+template <class NODETYPE>
+template <typename T>
+T NodeCanopenThomsonDriver<NODETYPE>::read_feedback(const ThomsonObject& object)
+{
+  // Not universal_get_value(): the feedback objects are mapped in a TPDO, so it would return the
+  // master's local copy, which never fails and goes stale when the actuator is gone.
+  // Not sync_sdo_read_typed() either: it logs every timeout, which floods the log while unpowered.
+  auto fut = this->lely_driver_->template async_sdo_read_typed<T>(object.index, object.subindex);
+  if (fut.wait_for(kSdoWait) != std::future_status::ready)
+  {
+    throw std::runtime_error("no SDO response");
+  }
+  return fut.get();  // rethrows an SDO abort or timeout
+}
+
+template <class NODETYPE>
 void NodeCanopenThomsonDriver<NODETYPE>::write_command(uint16_t position_raw, uint8_t enable)
 {
   // All objects live in one synchronous RPDO, so the master sends them together on the next SYNC.
@@ -277,58 +325,79 @@ void NodeCanopenThomsonDriver<NODETYPE>::poll_timer_callback()
     return;
   }
 
-  // Poll feedback via SDO if TPDO not delivering data (PDO disabled or misconfigured)
-  try
+  const auto now = std::chrono::steady_clock::now();
+
+  if (online_ || now - last_offline_probe_ >= kOfflineProbeInterval)
   {
-    uint16_t pos_raw =
-        this->lely_driver_->template universal_get_value<uint16_t>(fb_position_.index, fb_position_.subindex);
-    const auto now = std::chrono::steady_clock::now();
-    if (feedback_received_.load())
+    last_offline_probe_ = now;
+    try
     {
-      const double dt = std::chrono::duration<double>(now - last_position_time_).count();
-      if (dt > 0.0)
+      const uint16_t pos_raw = read_feedback<uint16_t>(fb_position_);
+      if (feedback_received_.load())
       {
-        actual_speed_ = (from_raw(pos_raw) - from_raw(last_position_raw_)) / dt;
+        const double dt = std::chrono::duration<double>(now - last_position_time_).count();
+        if (dt > 0.0)
+        {
+          actual_speed_ = (from_raw(pos_raw) - from_raw(last_position_raw_)) / dt;
+        }
+      }
+      last_position_raw_ = pos_raw;
+      last_position_time_ = now;
+      actual_raw_ = pos_raw;
+      last_feedback_ns_ = steady_now_ns();
+      feedback_received_ = true;
+
+      actual_current_ = read_feedback<uint16_t>(fb_current_);
+      status_ = read_feedback<uint8_t>(fb_status_);
+      flags_ = read_feedback<uint8_t>(fb_flags_);
+    }
+    catch (const std::exception& e)
+    {
+      // Offline is reported by the lost/available messages; only a flaky but alive actuator is logged here.
+      if (online_)
+      {
+        RCLCPP_WARN_THROTTLE(this->node_->get_logger(), *this->node_->get_clock(), 1000,
+                             "Thomson actuator '%s': reading feedback failed: %s", joint_name_.c_str(), e.what());
       }
     }
-    last_position_raw_ = pos_raw;
-    last_position_time_ = now;
-    actual_raw_ = pos_raw;
-    last_feedback_ns_ = steady_now_ns();
-    feedback_received_ = true;
-
-    actual_current_ = this->lely_driver_->template universal_get_value<uint16_t>(fb_current_.index, fb_current_.subindex);
-    status_ = this->lely_driver_->template universal_get_value<uint8_t>(fb_status_.index, fb_status_.subindex);
-    flags_ = this->lely_driver_->template universal_get_value<uint8_t>(fb_flags_.index, fb_flags_.subindex);
-  }
-  catch (const std::exception& e)
-  {
-    RCLCPP_ERROR_THROTTLE(this->node_->get_logger(), *this->node_->get_clock(), 1000,
-                          "Thomson actuator '%s': reading feedback failed: %s", joint_name_.c_str(), e.what());
   }
 
-  // Feedback coming back after a dropout: the actuator may have rebooted and lost the enable.
+  // Recovery cycle. Offline: reset the node now and then. Coming online or booting: NMT Start, then
+  // the enable sequence. Online but motion stays disabled: NMT Start and re-arm, reset after
+  // kMaxRearmAttempts. A device that just booted (or was reset) is PRE-OPERATIONAL and ignores the
+  // command RPDO until it gets NMT Start.
   const bool comm_failure = has_communication_failure();
-  if (comm_failure_seen_ && !comm_failure)
-  {
-    request_rearm("feedback restored");
-  }
-  comm_failure_seen_ = comm_failure;
-  // Unlike comm_failure_seen_, this also reports the very first feedback, e.g. after powering on.
   if (!comm_failure && !online_)
   {
     RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': available now", joint_name_.c_str());
+    send_nmt_start("came online");
+    request_rearm("came online");
   }
   else if (comm_failure && online_)
   {
     RCLCPP_WARN(this->node_->get_logger(), "Thomson actuator '%s': lost communication", joint_name_.c_str());
+    last_offline_reset_ = now;
   }
   online_ = !comm_failure;
 
-  const auto now = std::chrono::steady_clock::now();
+  if (boot_up_seen_.exchange(false))
+  {
+    send_nmt_start("boot-up");
+    request_rearm("boot-up");
+  }
+
+  if (comm_failure && offline_reset_interval_.count() > 0 && now - last_offline_reset_ >= offline_reset_interval_)
+  {
+    // Harmless while the actuator is unpowered, and the only way out if it hangs while powered.
+    RCLCPP_WARN_THROTTLE(this->node_->get_logger(), *this->node_->get_clock(), 30000,
+                         "Thomson actuator '%s': not answering, sending NMT reset node every %ld ms until it does",
+                         joint_name_.c_str(), (long)offline_reset_interval_.count());
+    this->lely_driver_->nmt_command(canopen::NmtCommand::RESET_NODE);
+    last_offline_reset_ = now;
+  }
 
   // A latched fault (e.g. overcurrent) keeps the actuator dead. Motion is disabled below; if the
-  // fault does not clear, reset the node. Its boot-up then re-arms through on_nmt().
+  // fault does not clear, reset the node.
   const bool fault = has_fault();
   if (fault && !fault_seen_)
   {
@@ -343,16 +412,28 @@ void NodeCanopenThomsonDriver<NODETYPE>::poll_timer_callback()
   fault_seen_ = fault;
   if (fault && fault_reset_interval_.count() > 0 && now - last_fault_reset_ > fault_reset_interval_)
   {
-    RCLCPP_WARN(this->node_->get_logger(), "Thomson actuator '%s': fault persists, sending NMT reset node",
-                joint_name_.c_str());
-    this->lely_driver_->nmt_command(canopen::NmtCommand::RESET_NODE);
+    send_nmt_reset("fault persists");
     last_fault_reset_ = now;
   }
 
-  if (enable_state_ == EnableState::Enabled && (flags_.load() & rearm_flag_mask_) != 0 &&
-      now - last_rearm_ > kRearmInterval)
+  const bool motion_disabled = (flags_.load() & rearm_flag_mask_) != 0;
+  if (enable_state_ == EnableState::Enabled && motion_disabled && now - last_rearm_ > kRearmInterval)
   {
-    request_rearm("actuator reports motion disabled");
+    if (++rearm_attempts_ > kMaxRearmAttempts)
+    {
+      send_nmt_reset("motion stays disabled after re-arming");
+      last_rearm_ = now;
+    }
+    else
+    {
+      // Most likely PRE-OPERATIONAL, so the enable sequence never reached the actuator.
+      send_nmt_start("actuator reports motion disabled");
+      request_rearm("actuator reports motion disabled");
+    }
+  }
+  else if (enable_state_ == EnableState::Enabled && !motion_disabled)
+  {
+    rearm_attempts_ = 0;
   }
 
   const bool want_enabled = enable_requested_.load() && !comm_failure && !has_fault();
@@ -415,10 +496,11 @@ template <class NODETYPE>
 void NodeCanopenThomsonDriver<NODETYPE>::on_nmt(canopen::NmtState nmt_state)
 {
   NodeCanopenProxyDriver<NODETYPE>::on_nmt(nmt_state);
-  // The bridge reports a boot-up as START. After a boot-up the actuator waits for a new 1 -> 0 -> 1.
+  // The bridge reports a boot-up as START. The actuator is PRE-OPERATIONAL then and waits for NMT
+  // Start and a new 1 -> 0 -> 1. Handled by the poll timer, which owns the recovery cycle.
   if (nmt_state == canopen::NmtState::START)
   {
-    request_rearm("NMT start");
+    boot_up_seen_ = true;
   }
 }
 
@@ -471,6 +553,7 @@ void NodeCanopenThomsonDriver<NODETYPE>::diagnostic_callback(diagnostic_updater:
   stat.add("enabled", is_enabled() ? "true" : "false");
   stat.add("communication_failure", has_communication_failure() ? "true" : "false");
   stat.add("fault", has_fault() ? "true" : "false");
+  stat.add("rearm_attempts", std::to_string(rearm_attempts_));
   stat.add("position_raw", std::to_string(actual_raw_.load()));
   stat.add("current_raw", std::to_string(actual_current_.load()));
   stat.add("status", std::to_string(status_.load()));

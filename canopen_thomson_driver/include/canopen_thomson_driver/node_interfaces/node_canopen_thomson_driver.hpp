@@ -86,7 +86,7 @@ public:
   /// Stop motion: enable byte 0, target follows the actual position.
   void disable();
 
-  /// True if no TPDO arrived within feedback_timeout_ms.
+  /// True if no feedback arrived within feedback_timeout_ms.
   bool has_communication_failure() const;
 
   /// True if the TPDO flags report a fault (fault_flag_mask).
@@ -122,6 +122,11 @@ private:
   uint16_t to_raw(double position) const;
   double from_raw(uint16_t raw) const;
   void request_rearm(const char* reason);
+  void send_nmt_start(const char* reason);
+  void send_nmt_reset(const char* reason);
+  /// Reads one feedback object from the actuator by SDO, throws if it does not answer.
+  template <typename T>
+  T read_feedback(const ThomsonObject& object);
   void write_command(uint16_t position_raw, uint8_t enable);
 
   // configuration (bus.yml)
@@ -137,6 +142,7 @@ private:
   uint8_t rearm_flag_mask_ = 0x01;
   uint8_t fault_flag_mask_ = 0x00;
   std::chrono::milliseconds fault_reset_interval_{ 2000 };  // 0 = never reset the node on a fault
+  std::chrono::milliseconds offline_reset_interval_{ 5000 };  // 0 = never reset a node that does not answer
 
   ThomsonObject cmd_position_;
   ThomsonObject cmd_current_limit_;
@@ -160,8 +166,11 @@ private:
   EnableState enable_state_ = EnableState::Disabled;
   uint32_t state_cycles_ = 0;
   std::chrono::steady_clock::time_point last_rearm_;
-  bool comm_failure_seen_ = false;
-  bool online_ = false;  // last poll had valid feedback, for the available/lost log messages
+  bool online_ = false;  // last poll had valid feedback
+  uint32_t rearm_attempts_ = 0;  // re-arms in a row while the actuator reported motion disabled
+  std::chrono::steady_clock::time_point last_offline_probe_;
+  std::chrono::steady_clock::time_point last_offline_reset_;
+  std::atomic<bool> boot_up_seen_{ false };  // set by on_nmt, handled by the poll timer
   bool fault_seen_ = false;
   std::chrono::steady_clock::time_point last_fault_reset_;
 

@@ -229,7 +229,7 @@ void NodeCanopenBaseDriver<NODETYPE>::add_to_master()
     // An unpowered device never answers, so never block startup on it. The master boots it as
     // soon as its boot-up message arrives, and the drivers initialize it from there.
     const auto boot_wait = std::chrono::milliseconds(
-        this->config_["boot_wait_ms"] ? this->config_["boot_wait_ms"].as<int>() : 1000);
+        this->config_["boot_wait_ms"] ? this->config_["boot_wait_ms"].template as<int>() : 1000);
     RCLCPP_INFO(this->node_->get_logger(), "Wait up to %ld ms for device to boot.", (long)boot_wait.count());
     this->lely_driver_->Boot();
     try

@@ -438,11 +438,7 @@ public:
   std::future<bool> async_sdo_write_typed(uint16_t idx, uint8_t subidx, T value)
   {
     std::unique_lock<std::mutex> lck(sdo_mutex);
-    if (running)
-    {
-      sdo_cond.wait(lck);
-    }
-    running = true;
+    acquire_sdo(lck);
 
     auto prom = std::make_shared<std::promise<bool>>();
     lely::COSub* sub = this->dictionary_->find(idx, subidx);
@@ -452,11 +448,11 @@ public:
           "async_sdo_write_typed: id=%u index=0x%x subindex=%u object does not exist",
           (unsigned int)this->get_id(), (unsigned int)idx, (unsigned int)subidx);
       prom->set_value(false);
-      this->running = false;
-      this->sdo_cond.notify_one();
+      release_sdo();
       return prom->get_future();
     }
 
+    ::std::error_code ec;
     this->SubmitWrite(
         idx, subidx, value,
         [this, value, prom](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec) mutable {
@@ -471,10 +467,15 @@ public:
             prom->set_value(true);
           }
           std::unique_lock<std::mutex> lck(this->sdo_mutex);
-          this->running = false;
-          this->sdo_cond.notify_one();
+          release_sdo();
         },
-        20ms);
+        20ms, ec);
+    if (ec)
+    {
+      // Not queued (e.g. no client-SDO while the master boots the node), so the callback never runs.
+      prom->set_exception(lely::canopen::make_sdo_exception_ptr(get_id(), idx, subidx, ec, "AsyncDownload"));
+      release_sdo();
+    }
     return prom->get_future();
   }
 
@@ -521,11 +522,7 @@ public:
   std::future<T> async_sdo_read_typed(uint16_t idx, uint8_t subidx)
   {
     std::unique_lock<std::mutex> lck(sdo_mutex);
-    if (running)
-    {
-      sdo_cond.wait(lck);
-    }
-    running = true;
+    acquire_sdo(lck);
 
     auto prom = std::make_shared<std::promise<T>>();
     lely::COSub* sub = this->dictionary_->find(idx, subidx);
@@ -542,10 +539,10 @@ public:
       {
         prom->set_exception(std::current_exception());
       }
-      this->running = false;
-      this->sdo_cond.notify_one();
+      release_sdo();
       return prom->get_future();
     }
+    ::std::error_code ec;
     this->SubmitRead<T>(
         idx, subidx,
         [this, prom](uint8_t id, uint16_t idx, uint8_t subidx, ::std::error_code ec, T value) mutable {
@@ -560,10 +557,15 @@ public:
             prom->set_value(value);
           }
           std::unique_lock<std::mutex> lck(this->sdo_mutex);
-          this->running = false;
-          this->sdo_cond.notify_one();
+          release_sdo();
         },
-        20ms);
+        20ms, ec);
+    if (ec)
+    {
+      // Not queued (e.g. no client-SDO while the master boots the node), so the callback never runs.
+      prom->set_exception(lely::canopen::make_sdo_exception_ptr(get_id(), idx, subidx, ec, "AsyncUpload"));
+      release_sdo();
+    }
     return prom->get_future();
   }
 
@@ -716,7 +718,7 @@ public:
   }
 
   template <typename T>
-  void submit_write(COData data)
+  void submit_write(COData data, ::std::error_code& ec)
   {
     T value = 0;
     std::memcpy(&value, &data.data_, sizeof(value));
@@ -736,14 +738,13 @@ public:
             this->sdo_write_data_promise->set_value(true);
           }
           std::unique_lock<std::mutex> lck(this->sdo_mutex);
-          this->running = false;
-          this->sdo_cond.notify_one();
+          release_sdo();
         },
-        20ms);
+        20ms, ec);
   }
 
   template <typename T>
-  void submit_read(COData data)
+  void submit_read(COData data, ::std::error_code& ec)
   {
     this->SubmitRead<T>(
         data.index_, data.subindex_,
@@ -762,10 +763,24 @@ public:
             this->sdo_read_data_promise->set_value(d);
           }
           std::unique_lock<std::mutex> lck(this->sdo_mutex);
-          this->running = false;
-          this->sdo_cond.notify_one();
+          release_sdo();
         },
-        20ms);
+        20ms, ec);
+  }
+
+  /// Waits until no SDO request of this driver is in flight and claims the slot. Caller holds sdo_mutex.
+  void acquire_sdo(std::unique_lock<std::mutex>& lck)
+  {
+    // A predicate wait: a plain wait() may wake spuriously or lose the race against another caller.
+    sdo_cond.wait(lck, [this] { return !running; });
+    running = true;
+  }
+
+  /// Frees the slot claimed by acquire_sdo(). Caller holds sdo_mutex.
+  void release_sdo()
+  {
+    running = false;
+    sdo_cond.notify_one();
   }
 
   template <typename T>

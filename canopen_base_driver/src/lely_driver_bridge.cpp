@@ -184,11 +184,7 @@ void LelyDriverBridge::OnEmcy(uint16_t eec, uint8_t er, uint8_t msef[5]) noexcep
 std::future<bool> LelyDriverBridge::async_sdo_write(COData data)
 {
   std::unique_lock<std::mutex> lck(sdo_mutex);
-  if (running)
-  {
-    sdo_cond.wait(lck);
-  }
-  running = true;
+  acquire_sdo(lck);
 
   sdo_write_data_promise = std::make_shared<std::promise<bool>>();
   lely::COSub * sub = this->dictionary_->find(data.index_, data.subindex_);
@@ -198,43 +194,47 @@ std::future<bool> LelyDriverBridge::async_sdo_write(COData data)
         "async_sdo_write: id=%u index=0x%x subindex=%u object does not exist",
         (unsigned int)this->get_id(), (unsigned int)data.index_, (unsigned int)data.subindex_);
     this->sdo_write_data_promise->set_value(false);
-    this->running = false;
+    release_sdo();
     return sdo_write_data_promise->get_future();
   }
   uint8_t co_def = (uint8_t)sub->getType();
-  try
+  ::std::error_code ec = lely::canopen::SdoErrc::TYPE_LEN;  // unsupported data type
+  if (co_def == CO_DEFTYPE_UNSIGNED8)
   {
-    if (co_def == CO_DEFTYPE_UNSIGNED8)
-    {
-      this->submit_write<uint8_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_INTEGER8)
-    {
-      this->submit_write<int8_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_UNSIGNED16)
-    {
-      this->submit_write<uint16_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_INTEGER16)
-    {
-      this->submit_write<int16_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_UNSIGNED32)
-    {
-      this->submit_write<uint32_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_INTEGER32)
-    {
-      this->submit_write<int32_t>(data);
-    }
+    ec.clear();
+    this->submit_write<uint8_t>(data, ec);
   }
-  catch (lely::canopen::SdoError & e)
+  if (co_def == CO_DEFTYPE_INTEGER8)
   {
-    this->sdo_read_data_promise->set_exception(lely::canopen::make_sdo_exception_ptr(
-      this->get_id(), data.index_, data.subindex_, e.code(), "AsyncUpload"));
-    this->running = false;
-    this->sdo_cond.notify_one();
+    ec.clear();
+    this->submit_write<int8_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_UNSIGNED16)
+  {
+    ec.clear();
+    this->submit_write<uint16_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_INTEGER16)
+  {
+    ec.clear();
+    this->submit_write<int16_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_UNSIGNED32)
+  {
+    ec.clear();
+    this->submit_write<uint32_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_INTEGER32)
+  {
+    ec.clear();
+    this->submit_write<int32_t>(data, ec);
+  }
+  if (ec)
+  {
+    // Not queued (e.g. no client-SDO while the master boots the node), so the callback never runs.
+    this->sdo_write_data_promise->set_exception(lely::canopen::make_sdo_exception_ptr(
+      this->get_id(), data.index_, data.subindex_, ec, "AsyncDownload"));
+    release_sdo();
   }
 
   return sdo_write_data_promise->get_future();
@@ -243,11 +243,7 @@ std::future<bool> LelyDriverBridge::async_sdo_write(COData data)
 std::future<COData> LelyDriverBridge::async_sdo_read(COData data)
 {
   std::unique_lock<std::mutex> lck(sdo_mutex);
-  if (running)
-  {
-    sdo_cond.wait(lck);
-  }
-  running = true;
+  acquire_sdo(lck);
 
   sdo_read_data_promise = std::make_shared<std::promise<COData>>();
   lely::COSub * sub = this->dictionary_->find(data.index_, data.subindex_);
@@ -265,43 +261,47 @@ std::future<COData> LelyDriverBridge::async_sdo_read(COData data)
     {
       this->sdo_read_data_promise->set_exception(std::current_exception());
     }
-    this->running = false;
+    release_sdo();
     return sdo_read_data_promise->get_future();
   }
   uint8_t co_def = (uint8_t)sub->getType();
-  try
+  ::std::error_code ec = lely::canopen::SdoErrc::TYPE_LEN;  // unsupported data type
+  if (co_def == CO_DEFTYPE_UNSIGNED8)
   {
-    if (co_def == CO_DEFTYPE_UNSIGNED8)
-    {
-      this->submit_read<uint8_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_INTEGER8)
-    {
-      this->submit_read<int8_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_UNSIGNED16)
-    {
-      this->submit_read<uint16_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_INTEGER16)
-    {
-      this->submit_read<int16_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_UNSIGNED32)
-    {
-      this->submit_read<uint32_t>(data);
-    }
-    if (co_def == CO_DEFTYPE_INTEGER32)
-    {
-      this->submit_read<int32_t>(data);
-    }
+    ec.clear();
+    this->submit_read<uint8_t>(data, ec);
   }
-  catch (lely::canopen::SdoError & e)
+  if (co_def == CO_DEFTYPE_INTEGER8)
   {
+    ec.clear();
+    this->submit_read<int8_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_UNSIGNED16)
+  {
+    ec.clear();
+    this->submit_read<uint16_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_INTEGER16)
+  {
+    ec.clear();
+    this->submit_read<int16_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_UNSIGNED32)
+  {
+    ec.clear();
+    this->submit_read<uint32_t>(data, ec);
+  }
+  if (co_def == CO_DEFTYPE_INTEGER32)
+  {
+    ec.clear();
+    this->submit_read<int32_t>(data, ec);
+  }
+  if (ec)
+  {
+    // Not queued (e.g. no client-SDO while the master boots the node), so the callback never runs.
     this->sdo_read_data_promise->set_exception(lely::canopen::make_sdo_exception_ptr(
-      this->get_id(), data.index_, data.subindex_, e.code(), "AsyncUpload"));
-    this->running = false;
-    this->sdo_cond.notify_one();
+      this->get_id(), data.index_, data.subindex_, ec, "AsyncUpload"));
+    release_sdo();
   }
   return sdo_read_data_promise->get_future();
 }

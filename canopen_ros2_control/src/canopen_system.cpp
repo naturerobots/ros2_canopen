@@ -77,8 +77,9 @@ hardware_interface::CallbackReturn CanopenSystem::on_init(
 hardware_interface::CallbackReturn CanopenSystem::on_configure(
   const rclcpp_lifecycle::State & previous_state)
 {
-  // ponytail: SingleThreadedExecutor reduces thread contention with controller_manager
-  executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  // Multi-threaded: every driver blocks on SDO in its timers, and each driver has its own callback
+  // group. On a single thread one silent device (e.g. unpowered) stalls all other drivers.
+  executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
   device_container_ = std::make_shared<ros2_canopen::DeviceContainer>(executor_);
   executor_->add_node(device_container_);
 

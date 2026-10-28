@@ -278,7 +278,8 @@ hardware_interface::CallbackReturn Cia402System::on_activate(const rclcpp_lifecy
     const std::string& joint_name = entry.second->get_joint_name();
     if (offset_enabled_joints_.count(joint_name) > 0)
     {
-      RCLCPP_WARN(kLogger, "Joint %s is a Thomson actuator with absolute position, ignoring enable_position_offset",
+      RCLCPP_WARN(kLogger, "Joint %s is a Thomson actuator with absolute position, ignoring enable_position_offset "
+                  "(use its driver's set_zero / set_zero_offset services)",
                   joint_name.c_str());
       offset_enabled_joints_.erase(joint_name);
     }

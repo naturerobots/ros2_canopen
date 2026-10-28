@@ -100,7 +100,7 @@ Joint parameters:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `enable_position_offset` | false | CiA 402 only: keep a persisted position offset (see below). Ignored for Thomson actuators |
+| `enable_position_offset` | false | CiA 402 only: keep a persisted position offset (see below). Ignored for Thomson actuators, they have their own persisted zero offset (see the driver README) |
 | `node_id` | – | optional: also export the raw CANopen interfaces of that node (`nmt/state`, `rpdo/*` state; `nmt/reset`, `nmt/start`, `tpdo/*` commands) |
 
 Joints are matched **by name**: a URDF joint must have the same name as a `joint_name` in

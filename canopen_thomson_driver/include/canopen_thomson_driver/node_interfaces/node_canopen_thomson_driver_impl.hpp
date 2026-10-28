@@ -17,6 +17,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <stdexcept>
 
@@ -125,11 +129,117 @@ void NodeCanopenThomsonDriver<NODETYPE>::configure(bool called_from_base)
   fb_status_ = read_object("fb_status_object", { 0x2204, 0 });
   fb_flags_ = read_object("fb_flags_object", { 0x2205, 0 });
 
+  zero_offset_file_ = config["zero_offset_file"] ? config["zero_offset_file"].as<std::string>() :
+                                                    "~/thomson_zero_offset_" + joint_name_ + ".txt";
+  if (!zero_offset_file_.empty() && zero_offset_file_[0] == '~')
+  {
+    const char* home = std::getenv("HOME");
+    if (home)
+    {
+      zero_offset_file_ = std::string(home) + zero_offset_file_.substr(1);
+    }
+  }
+  load_zero_offset();
+
+  // Always created, independent of enable_ros_interfaces: they are the only way to set the zero.
+  set_zero_service_ = this->node_->template create_service<std_srvs::srv::Trigger>(
+      std::string(this->node_->get_name()).append("/set_zero").c_str(),
+      std::bind(&NodeCanopenThomsonDriver<NODETYPE>::on_set_zero, this, std::placeholders::_1,
+                std::placeholders::_2));
+  set_zero_offset_service_ = this->node_->template create_service<canopen_interfaces::srv::COTargetDouble>(
+      std::string(this->node_->get_name()).append("/set_zero_offset").c_str(),
+      std::bind(&NodeCanopenThomsonDriver<NODETYPE>::on_set_zero_offset, this, std::placeholders::_1,
+                std::placeholders::_2));
+
   RCLCPP_INFO(this->node_->get_logger(),
-              "Thomson actuator '%s': %s position conversion, raw at 0 rad %.1f, raw range [%u, %u], "
-              "current limit %u, speed %u",
+              "Thomson actuator '%s': %s position conversion, raw at 0 rad %.1f (zero offset %.1f from %s), "
+              "raw range [%u, %u], current limit %u, speed %u",
               joint_name_.c_str(), position_conversion_.is_table() ? "table" : "linear",
-              position_conversion_.to_dev(0.0), min_raw_, max_raw_, current_limit_, speed_);
+              position_conversion_.to_dev(0.0) + zero_offset_.load(), zero_offset_.load(), zero_offset_file_.c_str(),
+              min_raw_, max_raw_, current_limit_, speed_);
+}
+
+template <class NODETYPE>
+void NodeCanopenThomsonDriver<NODETYPE>::load_zero_offset()
+{
+  // Unlike the CiA402 offsets there is no cold start check: the position is absolute, so the offset
+  // stays valid across power cycles.
+  std::ifstream file(zero_offset_file_);
+  double offset = 0.0;
+  if (!file.is_open())
+  {
+    RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': no zero offset file %s, using 0",
+                joint_name_.c_str(), zero_offset_file_.c_str());
+  }
+  else if (!(file >> offset) || !std::isfinite(offset))
+  {
+    RCLCPP_WARN(this->node_->get_logger(), "Thomson actuator '%s': cannot parse zero offset file %s, using 0",
+                joint_name_.c_str(), zero_offset_file_.c_str());
+    offset = 0.0;
+  }
+  zero_offset_ = offset;
+}
+
+template <class NODETYPE>
+bool NodeCanopenThomsonDriver<NODETYPE>::set_zero_offset(double offset)
+{
+  const double previous = zero_offset_.exchange(offset);
+  RCLCPP_INFO(this->node_->get_logger(), "Thomson actuator '%s': zero offset %.1f -> %.1f (raw at 0 rad %.1f)",
+              joint_name_.c_str(), previous, offset, position_conversion_.to_dev(0.0) + offset);
+
+  std::error_code ec;
+  const std::filesystem::path path(zero_offset_file_);
+  if (path.has_parent_path())
+  {
+    std::filesystem::create_directories(path.parent_path(), ec);
+  }
+  // Write a temporary file and rename it, so a power loss never leaves a broken file behind.
+  const std::string tmp_path = zero_offset_file_ + ".tmp";
+  {
+    std::ofstream file(tmp_path);
+    if (!file.is_open() || !(file << offset << "\n"))
+    {
+      RCLCPP_ERROR(this->node_->get_logger(), "Thomson actuator '%s': cannot write zero offset file %s",
+                   joint_name_.c_str(), tmp_path.c_str());
+      return false;
+    }
+  }
+  if (std::rename(tmp_path.c_str(), zero_offset_file_.c_str()) != 0)
+  {
+    RCLCPP_ERROR(this->node_->get_logger(), "Thomson actuator '%s': cannot write zero offset file %s",
+                 joint_name_.c_str(), zero_offset_file_.c_str());
+    return false;
+  }
+  return true;
+}
+
+template <class NODETYPE>
+void NodeCanopenThomsonDriver<NODETYPE>::on_set_zero(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                                                     std_srvs::srv::Trigger::Response::SharedPtr response)
+{
+  if (has_communication_failure())
+  {
+    response->success = false;
+    response->message = "no feedback from the actuator";
+    return;
+  }
+  // The actual position becomes 0 rad.
+  const double offset = static_cast<double>(actual_raw_.load()) - position_conversion_.to_dev(0.0);
+  response->success = set_zero_offset(offset);
+  response->message = "zero offset " + std::to_string(offset) + (response->success ? "" : ", not saved");
+}
+
+template <class NODETYPE>
+void NodeCanopenThomsonDriver<NODETYPE>::on_set_zero_offset(
+    const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+    canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response)
+{
+  if (!std::isfinite(request->target) || std::abs(request->target) > 0xFFFF)
+  {
+    response->success = false;
+    return;
+  }
+  response->success = set_zero_offset(request->target);
 }
 
 template <class NODETYPE>
@@ -159,14 +269,14 @@ void NodeCanopenThomsonDriver<NODETYPE>::deactivate(bool called_from_base)
 template <class NODETYPE>
 uint16_t NodeCanopenThomsonDriver<NODETYPE>::to_raw(double position) const
 {
-  const double raw = std::round(position_conversion_.to_dev(position));
+  const double raw = std::round(position_conversion_.to_dev(position) + zero_offset_.load());
   return static_cast<uint16_t>(std::clamp(raw, static_cast<double>(min_raw_), static_cast<double>(max_raw_)));
 }
 
 template <class NODETYPE>
 double NodeCanopenThomsonDriver<NODETYPE>::from_raw(uint16_t raw) const
 {
-  return position_conversion_.from_dev(static_cast<double>(raw));
+  return position_conversion_.from_dev(static_cast<double>(raw) - zero_offset_.load());
 }
 
 template <class NODETYPE>
@@ -555,6 +665,7 @@ void NodeCanopenThomsonDriver<NODETYPE>::diagnostic_callback(diagnostic_updater:
   stat.add("fault", has_fault() ? "true" : "false");
   stat.add("rearm_attempts", std::to_string(rearm_attempts_));
   stat.add("position_raw", std::to_string(actual_raw_.load()));
+  stat.add("zero_offset_raw", std::to_string(zero_offset_.load()));
   stat.add("current_raw", std::to_string(actual_current_.load()));
   stat.add("status", std::to_string(status_.load()));
   stat.add("flags", std::to_string(flags_.load()));

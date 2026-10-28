@@ -21,6 +21,7 @@
 #include <string>
 
 #include "canopen_base_driver/value_conversion.hpp"
+#include "canopen_interfaces/srv/co_target_double.hpp"
 #include "canopen_proxy_driver/node_interfaces/node_canopen_proxy_driver.hpp"
 
 namespace ros2_canopen
@@ -49,6 +50,8 @@ struct ThomsonObject
  * The joint position is the steering angle in rad, converted by ValueConversion "position":
  * linear raw = center_position + rad * scale_pos_to_dev (default), or `position_conversion: table`
  * with measured `position_table_to_dev` / `position_table_from_dev` for a nonlinear steering linkage.
+ * A persisted zero offset (raw units, set by service) shifts that conversion:
+ * raw = to_dev(rad) + zero_offset. The actuator is absolute, so the offset is restored as is.
  */
 template <class NODETYPE>
 class NodeCanopenThomsonDriver : public NodeCanopenProxyDriver<NODETYPE>
@@ -128,6 +131,13 @@ private:
   template <typename T>
   T read_feedback(const ThomsonObject& object);
   void write_command(uint16_t position_raw, uint8_t enable);
+  void load_zero_offset();
+  /// Stores and persists the zero offset. Returns false if the file could not be written.
+  bool set_zero_offset(double offset);
+  void on_set_zero(const std_srvs::srv::Trigger::Request::SharedPtr request,
+                   std_srvs::srv::Trigger::Response::SharedPtr response);
+  void on_set_zero_offset(const canopen_interfaces::srv::COTargetDouble::Request::SharedPtr request,
+                          canopen_interfaces::srv::COTargetDouble::Response::SharedPtr response);
 
   // configuration (bus.yml)
   std::string joint_name_;
@@ -143,6 +153,12 @@ private:
   uint8_t fault_flag_mask_ = 0x00;
   std::chrono::milliseconds fault_reset_interval_{ 2000 };  // 0 = never reset the node on a fault
   std::chrono::milliseconds offline_reset_interval_{ 5000 };  // 0 = never reset a node that does not answer
+  std::string zero_offset_file_;
+
+  // raw added to the converted position, set by service, read by the poll timer and ros2_control
+  std::atomic<double> zero_offset_{ 0.0 };
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr set_zero_service_;
+  rclcpp::Service<canopen_interfaces::srv::COTargetDouble>::SharedPtr set_zero_offset_service_;
 
   ThomsonObject cmd_position_;
   ThomsonObject cmd_current_limit_;

@@ -24,7 +24,7 @@ It is built on the proxy driver, so it keeps the NMT/SDO services of
 | Auto init after power loss | Yes (e.g. e-stop). Recovery cycle in the driver: while the actuator does not answer it is NMT reset every `offline_reset_interval_ms`; once it answers (or sends a boot-up) it gets NMT Start and a new enable sequence; if it then keeps reporting motion disabled, NMT Start and re-arm repeat every second and after 5 failed attempts the node is reset. Feedback is read by SDO, which works in PRE-OPERATIONAL too. |
 | Auto enable | Yes. While `Cia402System` is active and the actuator reports feedback without a fault, the driver runs the 1 → 0 → 1 enable sequence on its own. No service call is needed. |
 | Heartbeat | Optional. `heartbeat_producer` in `bus.yml` sets 0x1017 on the device. The driver does not use heartbeats itself: it detects a dead actuator through `feedback_timeout_ms`. |
-| Absolute position | Yes. The actuator reports an absolute position, so no homing or offset handling is needed (`enable_position_offset` is ignored for it). |
+| Absolute position | Yes. The actuator reports an absolute position, so no homing or cold start handling is needed (`enable_position_offset` is ignored for it). The zero can be moved by service, see [Zero offset](#zero-offset). |
 
 ## Protocol
 
@@ -81,6 +81,34 @@ The joint value is in rad. It is converted with
 The command is always clamped to `[min_raw, max_raw]`. The velocity state is differentiated
 from consecutive position samples.
 
+### Zero offset
+
+A zero offset in raw units shifts the conversion, so the table (or `center_position`) only has to
+describe the shape of the linkage: `raw = to_dev(rad) + zero_offset`,
+`rad = from_dev(raw - zero_offset)`. `min_raw` / `max_raw` are not shifted, they stay the limits of
+the actuator stroke.
+
+The offset is saved to `zero_offset_file` (default `~/thomson_zero_offset_<joint_name>.txt`, one
+number) whenever it changes, and loaded in `configure()`. Unlike the CiA 402 offsets of
+`Cia402System` there is no cold start check: the position is absolute, so the saved offset is
+always restored as is. Without a file the offset is 0.
+
+Services on the driver node (always available, independent of `enable_ros_interfaces`):
+
+| Service | Type | Description |
+|---|---|---|
+| `<node>/set_zero` | `std_srvs/Trigger` | the current position becomes 0 rad. Fails without feedback |
+| `<node>/set_zero_offset` | `canopen_interfaces/COTargetDouble` | set the offset to `target` (raw units, absolute) |
+
+```bash
+ros2 service call /steering/set_zero std_srvs/srv/Trigger
+ros2 service call /steering/set_zero_offset canopen_interfaces/srv/COTargetDouble "{target: -12.0}"
+```
+
+The new offset applies immediately: while enabled, the actuator moves by the offset change to keep
+the commanded angle (for `set_zero` with the steering controller holding 0 rad, it stays where it
+is). The current value is logged and reported in the diagnostics as `zero_offset_raw`.
+
 ## SDO-only operation
 
 The driver works with `tpdo: {1: {enabled: false}}` and/or `rpdo: {1: {enabled: false}}`. Feedback
@@ -120,7 +148,7 @@ Thomson-specific keys:
 |---|---|---|
 | `joint_name` | required | ros2_control joint name |
 | `position_conversion` | `linear` | `linear` or `table` |
-| `center_position` | 900 | raw value at 0 rad (linear) |
+| `center_position` | 900 | raw value at 0 rad (linear), before the [zero offset](#zero-offset) |
 | `scale_pos_to_dev` | required for linear | raw per rad (linear); the reverse scale is `1 / scale_pos_to_dev` |
 | `position_table_to_dev` / `position_table_from_dev` | required for table | `[[raw, rad], ...]` |
 | `min_raw` / `max_raw` | 0 / 0xFFFF | clamp for the raw command |
@@ -131,6 +159,7 @@ Thomson-specific keys:
 | `feedback_timeout_ms` | 1000 | no feedback for this long = communication failure |
 | `rearm_flag_mask` | 0x01 | flags bit(s) meaning "motion not enabled", triggers a re-arm |
 | `fault_flag_mask` | 0x00 | flags bit(s) meaning fault; blocks enabling |
+| `zero_offset_file` | `~/thomson_zero_offset_<joint_name>.txt` | where the [zero offset](#zero-offset) is persisted |
 | `cmd_*_object` / `fb_*_object` | see [Protocol](#protocol) | `[index, subindex]` overrides |
 
 ## Examples
